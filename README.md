@@ -15,9 +15,15 @@ Both roles serve `/healthz` and `/readyz`.
 source dev/env.sh          # workspace-local uv cache, interpreter and TMPDIR
 uv sync
 dev/render-configs.sh      # renders dev/cluster.yaml for this checkout
+docker compose up -d       # PostgreSQL and Redis
+uv run alembic -x config=dev/controller.yaml upgrade head
 uv run stashd --config dev/controller.yaml     # controller on :8000
 uv run stashd --config dev/daemon-hot1.yaml    # storage daemon HOT1 on :8001
 ```
+
+`uv run pytest tests/unit` needs nothing running; the integration suite needs the
+compose stack. A wire change ends with `scripts/gen-openapi.py`, whose output is
+committed and compared by a test.
 
 ## Checks
 

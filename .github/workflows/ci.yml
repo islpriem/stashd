@@ -5,6 +5,17 @@ on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: stash
+          POSTGRES_PASSWORD: stash
+          POSTGRES_DB: stash
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stash" --health-interval 2s
+          --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
