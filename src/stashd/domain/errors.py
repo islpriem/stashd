@@ -12,6 +12,7 @@ class ErrorCode(StrEnum):
     UNAUTHENTICATED = "UNAUTHENTICATED"
     FORBIDDEN = "FORBIDDEN"
     NOT_FOUND = "NOT_FOUND"
+    INVALID_REQUEST = "INVALID_REQUEST"
     INVALID_NAME = "INVALID_NAME"
     INVALID_PATH = "INVALID_PATH"
     PATH_NOT_FOUND = "PATH_NOT_FOUND"
@@ -44,6 +45,10 @@ class StashError(Exception):
         self.message = message
         self.details: dict[str, Any] = details
         super().__init__(message)
+
+
+class NotFound(StashError):
+    code = ErrorCode.NOT_FOUND
 
 
 class InvalidName(StashError):
