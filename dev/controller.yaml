@@ -1,0 +1,10 @@
+# Controller for local development: uv run stashd --config dev/controller.yaml
+# Paths are relative to this file.
+self:
+  daemon_id: controller
+  role: controller
+server: { host: 127.0.0.1, port: 8000 }
+database: { url: "postgresql+psycopg://stash:stash@localhost:5432/stash" }
+logging: { level: DEBUG, format: console }
+cache_dir: var/controller
+cluster_config: cluster.yaml

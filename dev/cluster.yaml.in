@@ -1,0 +1,54 @@
+# Development cluster config. Rendered into dev/cluster.yaml by dev/render-configs.sh,
+# which substitutes @ROOT@ with the repository path: storage roots must be absolute, and
+# in development they stay inside the checkout.
+revision: 1
+locations:
+  - { id: LOC1, name: "Development site 1" }
+  - { id: LOC2, name: "Development site 2" }
+storages:
+  - id: HOT1
+    location: LOC1
+    roles: [source]
+    tier: hot
+    driver: posix
+    root: @ROOT@/dev/storage/hot1
+    daemon: hot1
+    daemon_host: localhost
+  - id: LOC2HOT
+    location: LOC2
+    roles: [cache]
+    tier: hot
+    driver: posix
+    root: @ROOT@/dev/storage/loc2hot
+    capacity: 10Gi
+    fill_limit: 0.95
+    default_user_allocation_limit: 2Gi
+    daemon: loc2hot
+    daemon_host: localhost
+limits:
+  user_total_cache_allocation: 4Gi
+  max_filesets_per_user: 10
+  queued_transfers_per_user: 10
+  concurrency: { global: 4, per_storage: 2, per_user: 2, per_route: 2 }
+  bandwidth:
+    per_route_aggregate: 200Mbit
+    max_per_transfer: 100Mbit
+    min_per_transfer: 10Mbit
+scheduling:
+  interval: 5s
+  fairshare: { half_life: 7d, points_per_gib: 1.0 }
+  allocation_headroom: 1.05
+transfer:
+  engine: rsync
+  retries: { count: 2, backoff: 5s, retry_on: [network, timeout] }
+  progress_poll_interval: 5s
+  nominal_throughput:
+    default: 200MB/s
+    routes: { "HOT1->LOC2HOT": 120MB/s }
+auth:
+  cli: munge
+  munge_socket: /run/munge/munge.socket.2
+  peer: token
+  admin_uids: [0]
+  admin_gids: []
+retention: { transfers: 90d, audit: 365d }
