@@ -61,6 +61,16 @@ class TestEnvelope:
         assert response.status_code == 200
         assert response.headers["X-Request-Id"]
 
+    def test_every_response_names_the_api_and_server_version(
+        self, controller_app: TestClient
+    ) -> None:
+        from stashd import __version__
+
+        response = controller_app.get("/api/v1/whoami")
+
+        assert response.headers["X-Stash-Api-Version"] == "v1"
+        assert response.headers["X-Stash-Server-Version"] == __version__
+
     def test_two_requests_get_different_ids(self, controller_app: TestClient) -> None:
         first = controller_app.get("/api/v1/whoami").headers["X-Request-Id"]
         second = controller_app.get("/api/v1/whoami").headers["X-Request-Id"]
