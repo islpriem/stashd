@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from typer.testing import CliRunner
 
 from stashd import __version__, cli
+from stashd.auth.munge import MungeAuthProvider
 from stashd.config.bootstrap import LogFormat, LogLevel, Server
 from tests.conftest import WriteConfig
 
@@ -92,6 +93,36 @@ def test_a_missing_config_file_exits_with_a_message(monkeypatch: Any, tmp_path: 
     assert "does not exist" in result.output
     assert "Traceback" not in result.output
     assert served.app is None
+
+
+def test_the_controller_gets_a_database_and_an_auth_provider(
+    monkeypatch: Any,
+    write_bootstrap: WriteConfig,
+    write_cluster: WriteConfig,
+    controller_yaml: dict[str, Any],
+    valid_cluster: dict[str, Any],
+) -> None:
+    write_cluster(valid_cluster)
+    served = serve_recorder(monkeypatch)
+
+    result = runner.invoke(cli.app, ["--config", str(write_bootstrap(controller_yaml))])
+
+    assert result.exit_code == 0, result.output
+    assert served.app is not None
+    assert served.app.state.sessions is not None
+    assert isinstance(served.app.state.auth, MungeAuthProvider)
+
+
+def test_a_storage_daemon_has_neither(
+    monkeypatch: Any, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+) -> None:
+    served = serve_recorder(monkeypatch)
+
+    runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+
+    assert served.app is not None
+    assert served.app.state.sessions is None
+    assert served.app.state.auth is None
 
 
 def test_logging_is_configured_from_the_bootstrap_config(

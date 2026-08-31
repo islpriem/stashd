@@ -5,12 +5,17 @@ from typing import Annotated
 
 import typer
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stashd import __version__
 from stashd.api.app import create_app
+from stashd.auth.munge import MungeAuthProvider
+from stashd.auth.provider import AuthProvider
+from stashd.auth.system import SystemIdentityLookup
 from stashd.config.bootstrap import BootstrapConfig, Server, load_bootstrap_config
 from stashd.config.cluster import ClusterConfig, load_cluster_config
 from stashd.config.errors import ConfigError
+from stashd.db import create_engine, session_factory
 from stashd.obs.logging import configure_logging
 
 CONFIG_ERROR = 2
@@ -37,6 +42,17 @@ def _load_cluster(config: BootstrapConfig) -> ClusterConfig | None:
     return load_cluster_config(config.cluster_config)
 
 
+def _controller_parts(
+    config: BootstrapConfig, cluster: ClusterConfig
+) -> tuple[async_sessionmaker[AsyncSession] | None, AuthProvider | None]:
+    """A controller owns the database and verifies the credential of every request."""
+    sessions = None
+    if config.database is not None:
+        sessions = session_factory(create_engine(config.database.url))
+    auth = MungeAuthProvider(cluster.auth.munge_socket, SystemIdentityLookup())
+    return sessions, auth
+
+
 @app.command()
 def main(
     config: Annotated[
@@ -56,4 +72,7 @@ def main(
         typer.echo(str(error), err=True)
         raise typer.Exit(CONFIG_ERROR) from None
     configure_logging(bootstrap.logging.level, bootstrap.logging.format)
-    _serve(create_app(bootstrap, cluster), bootstrap.server)
+    sessions, auth = (
+        _controller_parts(bootstrap, cluster) if cluster is not None else (None, None)
+    )
+    _serve(create_app(bootstrap, cluster, auth=auth, sessions=sessions), bootstrap.server)
