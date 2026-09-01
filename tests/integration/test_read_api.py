@@ -80,6 +80,8 @@ class TestFilesets:
             ({"user": "jdoe"}, {"theirs"}),
             ({"kind": "output"}, {"results"}),
             ({"state": "FAILED"}, {"broken"}),
+            ({"name": "mydir"}, {"mydir"}),
+            ({"name": "absent"}, set()),
         ],
     )
     async def test_the_list_is_filtered(

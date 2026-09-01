@@ -49,11 +49,12 @@ async def list_filesets(
     session: Session,
     storage: Annotated[str | None, Query()] = None,
     user: Annotated[str | None, Query()] = None,
+    name: Annotated[str | None, Query()] = None,
     kind: Annotated[FilesetKind | None, Query()] = None,
     state: Annotated[FilesetState | None, Query()] = None,
 ) -> Filesets:
     rows = await service.list_filesets(
-        session, storage=storage, user=user, kind=kind, state=state
+        session, storage=storage, user=user, name=name, kind=kind, state=state
     )
     return Filesets(filesets=[to_wire(row) for row in rows])
 

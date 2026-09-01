@@ -29,6 +29,7 @@ async def list_filesets(
     *,
     storage: str | None = None,
     user: str | None = None,
+    name: str | None = None,
     kind: FilesetKind | None = None,
     state: FilesetState | None = None,
 ) -> Sequence[Fileset]:
@@ -37,6 +38,8 @@ async def list_filesets(
         query = query.where(Fileset.storage_id == storage)
     if user is not None:
         query = query.where(Fileset.owner_user == user)
+    if name is not None:
+        query = query.where(Fileset.name == name)
     if kind is not None:
         query = query.where(Fileset.kind == kind)
     if state is not None:
