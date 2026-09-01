@@ -36,6 +36,9 @@ class Storage(Wire):
     daemon: str
     drained: bool
     enabled: bool
+    # False where the driver cannot hold a directory quota: the allocation is then a
+    # reservation in STASH, and an overrun is only found afterwards.
+    quota_enforced: bool
 
 
 class Storages(Wire):

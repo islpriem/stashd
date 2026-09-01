@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from stashd import __version__
 from stashd.api.deps import Caller, Cluster, caller_is_admin
+from stashd.drivers.factory import capabilities_for
 from stashd.schemas.topology import Location, Locations, Storage, Storages, WhoAmI
 
 API_VERSION = "v1"
@@ -50,6 +51,7 @@ async def storages(config: Cluster) -> Storages:
                 daemon=storage.daemon,
                 drained=False,
                 enabled=storage.enabled,
+                quota_enforced=capabilities_for(storage.driver).native_quota,
             )
             for storage in config.storages
         ]

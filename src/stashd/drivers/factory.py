@@ -9,9 +9,16 @@ from pathlib import Path
 
 from stashd.config.cluster import ClusterConfig, Driver, Storage
 from stashd.config.errors import ConfigError
-from stashd.drivers.base import StorageDriver
+from stashd.drivers.base import StorageCapabilities, StorageDriver
 from stashd.drivers.posix import PosixDriver
 from stashd.identity.base import Identity
+
+_CAPABILITIES: dict[Driver, StorageCapabilities] = {Driver.POSIX: PosixDriver.capabilities}
+
+
+def capabilities_for(driver: Driver) -> StorageCapabilities:
+    """What a storage can do, without touching it: the controller has no roots."""
+    return _CAPABILITIES[driver]
 
 
 def build_drivers(

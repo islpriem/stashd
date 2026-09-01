@@ -58,9 +58,22 @@ def test_storages_carry_roles_tier_driver_and_capacity(controller_app: TestClien
         "daemon": "loc2hot",
         "drained": False,
         "enabled": True,
+        "quota_enforced": False,
     }
     assert storages["HOT1"]["roles"] == ["source"]
     assert storages["HOT1"]["capacity_bytes"] is None
+
+
+def test_a_storage_says_whether_its_allocation_is_enforced(
+    controller_app: TestClient,
+) -> None:
+    """On plain POSIX an allocation is a reservation, not a limit the filesystem holds."""
+    storages = controller_app.get("/api/v1/storages").json()["storages"]
+
+    assert {entry["id"]: entry["quota_enforced"] for entry in storages} == {
+        "HOT1": False,
+        "LOC2HOT": False,
+    }
 
 
 def test_a_storage_daemon_serves_none_of_this(storage_bootstrap: object) -> None:
