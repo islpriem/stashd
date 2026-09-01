@@ -6,6 +6,7 @@ created once per session and migrated with Alembic; every test starts from empty
 
 import os
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 
 import httpx2
 import pytest
@@ -20,7 +21,10 @@ from stashd.auth.fake import FakeAuthProvider
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig
 from stashd.db import create_engine, session_factory
+from stashd.domain.errors import NotFound
 from stashd.domain.identity import Principal
+from stashd.domain.storage import FilesetLocation, Owner
+from stashd.drivers.fake import FakeDriver
 from stashd.models import Base
 
 USER = Principal(uid=1000, gid=1000, username="mmustermann", groups=("users",), gids=(1000,))
@@ -80,11 +84,53 @@ async def session(sessions: async_sessionmaker[AsyncSession]) -> AsyncIterator[A
         yield session
 
 
+class DirectFilesetStore:
+    """A store that calls a driver in-process: what the daemon does, without the hop."""
+
+    def __init__(self, driver: FakeDriver) -> None:
+        self.driver = driver
+
+    async def create(
+        self, storage_id: str, owner: Owner, name: str, allocation_bytes: int
+    ) -> FilesetLocation:
+        location = self.driver.create_fileset(owner, name, allocation_bytes)
+        self.driver.set_fileset_quota(location, allocation_bytes)
+        return location
+
+    async def delete(self, fileset_id: int, location: FilesetLocation) -> None:
+        self.driver.delete_fileset(location)
+
+
+class FixedClock:
+    def __init__(self, now: datetime) -> None:
+        self._now = now
+
+    def now(self) -> datetime:
+        return self._now
+
+
+class FakeOwnerLookup:
+    """Everyone the tests know about, without touching the host's passwd file."""
+
+    def by_name(self, user: str) -> Owner:
+        known = {"mmustermann": (1000, 1000), "jdoe": (1001, 1001), "root": (0, 0)}
+        if user not in known:
+            raise NotFound(f"no user named {user}", user=user)
+        uid, gid = known[user]
+        return Owner(user=user, uid=uid, gid=gid)
+
+
+@pytest.fixture
+def fake_driver() -> FakeDriver:
+    return FakeDriver(storage_id="LOC2HOT", fileset_prefix="/fake/cache")
+
+
 @pytest_asyncio.fixture
 async def api(
     sessions: async_sessionmaker[AsyncSession],
     controller_bootstrap: BootstrapConfig,
     cluster_config: ClusterConfig,
+    fake_driver: FakeDriver,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     """The controller with a real database and a fake credential per user."""
     app = create_app(
@@ -92,6 +138,9 @@ async def api(
         cluster_config,
         auth=FakeAuthProvider(CREDENTIALS),
         sessions=sessions,
+        store=DirectFilesetStore(fake_driver),
+        owners=FakeOwnerLookup(),
+        clock=FixedClock(datetime(2026, 9, 1, 12, 0, tzinfo=UTC)),
     )
     transport = httpx2.ASGITransport(app=app)
     async with httpx2.AsyncClient(
