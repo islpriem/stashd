@@ -8,3 +8,4 @@ database: { url: "postgresql+psycopg://stash:stash@localhost:5432/stash" }
 logging: { level: DEBUG, format: console }
 cache_dir: var/controller
 cluster_config: cluster.yaml
+peer_token_file: peer-token

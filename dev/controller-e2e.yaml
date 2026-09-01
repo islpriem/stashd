@@ -7,4 +7,5 @@ server: { host: 0.0.0.0, port: 8000 }
 database: { url: "postgresql+psycopg://stash:stash@postgres:5432/stash" }
 logging: { level: INFO, format: json }
 cache_dir: var/controller
-cluster_config: cluster.yaml
+cluster_config: cluster-e2e.yaml
+peer_token_file: peer-token

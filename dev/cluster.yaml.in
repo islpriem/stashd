@@ -1,30 +1,31 @@
-# Development cluster config. Rendered into dev/cluster.yaml by dev/render-configs.sh,
-# which substitutes @ROOT@ with the repository path: storage roots must be absolute, and
-# in development they stay inside the checkout.
+# Development cluster config. Rendered by dev/render-configs.sh, which substitutes
+# @STORAGE@ with the directory holding the development storage roots: they must be
+# absolute, and by default they stay inside the checkout.
 revision: 1
 locations:
   - { id: LOC1, name: "Development site 1" }
   - { id: LOC2, name: "Development site 2" }
+daemons:
+  - { id: hot1, url: "http://127.0.0.1:8001" }
+  - { id: loc2hot, url: "http://127.0.0.1:8002" }
 storages:
   - id: HOT1
     location: LOC1
     roles: [source]
     tier: hot
     driver: posix
-    root: @ROOT@/dev/storage/hot1
+    root: @STORAGE@/hot1
     daemon: hot1
-    daemon_host: localhost
   - id: LOC2HOT
     location: LOC2
     roles: [cache]
     tier: hot
     driver: posix
-    root: @ROOT@/dev/storage/loc2hot
+    root: @STORAGE@/loc2hot
     capacity: 10Gi
     fill_limit: 0.95
     default_user_allocation_limit: 2Gi
     daemon: loc2hot
-    daemon_host: localhost
 limits:
   user_total_cache_allocation: 4Gi
   max_filesets_per_user: 10
