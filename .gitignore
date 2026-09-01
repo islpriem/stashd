@@ -8,6 +8,7 @@ __pycache__/
 
 # Rendered by dev/render-configs.sh
 /dev/cluster.yaml
+/dev/cluster-e2e.yaml
 /dev/storage/
 /dev/var/
 /dev/peer-token
