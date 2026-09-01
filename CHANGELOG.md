@@ -28,6 +28,9 @@
   `POST /transfers` releases one and frees the allocation only after
   the daemon confirms. Both are audited.
 - `docs/OPERATIONS.md`.
+- `/storages` says per storage whether an allocation is enforced by the filesystem,
+  and `/transfers` can be filtered to one fileset: both are what `stash quota`
+  and `stash fileset show` need.
 
 ### Changed
 

@@ -253,6 +253,37 @@ class TestTransfers:
         assert await ids(storage="OTHER") == [2]
         assert await ids(storage="HOT1") == [1]
 
+    async def test_the_transfers_of_one_fileset_are_its_history(
+        self, api: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        await given(session, cached("mine"), cached("other"))
+        listed = (await api.get("/filesets")).json()["filesets"]
+        mine = next(entry["id"] for entry in listed if entry["name"] == "mine")
+        other = next(entry["id"] for entry in listed if entry["name"] == "other")
+        await given(
+            session,
+            Transfer(
+                kind=TransferKind.WARM,
+                user="mmustermann",
+                fileset_id=mine,
+                state=TransferState.SUCCEEDED,
+                route="HOT1->LOC2HOT",
+                submitted_at=T0,
+            ),
+            Transfer(
+                kind=TransferKind.WARM,
+                user="mmustermann",
+                fileset_id=other,
+                state=TransferState.SUCCEEDED,
+                route="HOT1->LOC2HOT",
+                submitted_at=T0,
+            ),
+        )
+
+        body = (await api.get("/transfers", params={"fileset_id": mine})).json()
+
+        assert [entry["fileset_id"] for entry in body["transfers"]] == [mine]
+
     async def test_one_transfer_by_id(
         self, api: httpx2.AsyncClient, session: AsyncSession
     ) -> None:

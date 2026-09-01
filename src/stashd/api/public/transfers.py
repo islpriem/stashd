@@ -45,6 +45,7 @@ async def list_transfers(
     state: Annotated[TransferState | None, Query()] = None,
     kind: Annotated[TransferKind | None, Query()] = None,
     storage: Annotated[str | None, Query()] = None,
+    fileset_id: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(gt=0, le=service.MAX_PAGE)] = 50,
     cursor: Annotated[int | None, Query(ge=0)] = None,
 ) -> Transfers:
@@ -54,6 +55,7 @@ async def list_transfers(
         state=state,
         kind=kind,
         storage=storage,
+        fileset_id=fileset_id,
         limit=limit,
         cursor=str(cursor) if cursor is not None else None,
     )

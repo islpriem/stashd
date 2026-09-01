@@ -19,6 +19,7 @@ async def list_transfers(
     state: TransferState | None = None,
     kind: TransferKind | None = None,
     storage: str | None = None,
+    fileset_id: int | None = None,
     limit: int = 50,
     cursor: str | None = None,
 ) -> tuple[Sequence[Transfer], str | None]:
@@ -31,6 +32,8 @@ async def list_transfers(
         query = query.where(Transfer.state == state)
     if kind is not None:
         query = query.where(Transfer.kind == kind)
+    if fileset_id is not None:
+        query = query.where(Transfer.fileset_id == fileset_id)
     if storage is not None:
         query = query.where(
             sa.or_(
