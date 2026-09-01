@@ -19,3 +19,21 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # Only for the checks that need real MUNGE credentials: docker compose --profile e2e
+  e2e:
+    build: dev/e2e
+    profiles: ["e2e"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ..:/workspace
+      - e2e-venvs:/opt/venvs
+      - e2e-uv-cache:/opt/uv-cache
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
+
+volumes:
+  e2e-venvs:
+  e2e-uv-cache:
