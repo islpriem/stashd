@@ -31,9 +31,11 @@ services:
       - ..:/workspace
       - e2e-venvs:/opt/venvs
       - e2e-uv-cache:/opt/uv-cache
+      - e2e-storage:/srv/stash
     working_dir: /workspace
     command: ["sleep", "infinity"]
 
 volumes:
   e2e-venvs:
   e2e-uv-cache:
+  e2e-storage:
