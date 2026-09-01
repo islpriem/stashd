@@ -1,0 +1,10 @@
+# The controller as it runs inside the e2e container: PostgreSQL is a compose service and
+# the API listens on every interface. Paths are relative to this file.
+self:
+  daemon_id: controller
+  role: controller
+server: { host: 0.0.0.0, port: 8000 }
+database: { url: "postgresql+psycopg://stash:stash@postgres:5432/stash" }
+logging: { level: INFO, format: json }
+cache_dir: var/controller
+cluster_config: cluster.yaml
