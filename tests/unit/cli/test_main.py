@@ -148,3 +148,87 @@ def test_version_is_printed_without_a_config() -> None:
 
     assert result.exit_code == 0
     assert result.output.strip() == __version__
+
+
+class TestStorageDaemonStartup:
+    def _daemon(
+        self, tmp_path: Any, storage_yaml: dict[str, Any], cluster: dict[str, Any]
+    ) -> None:
+        for storage in cluster["storages"]:
+            root = tmp_path / storage["id"].lower()
+            root.mkdir(exist_ok=True)
+            storage["root"] = str(root)
+            storage.pop("fileset_prefix", None)
+
+    def test_a_storage_daemon_builds_a_driver_for_each_storage(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        storage_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        self._daemon(tmp_path, storage_yaml, valid_cluster)
+        write_cluster(valid_cluster)
+        (tmp_path / "peer-token").write_text("s3cret\n")
+        (tmp_path / "peer-token").chmod(0o600)
+        storage_yaml.update(
+            {
+                "cluster_config": "cluster.yaml",
+                "peer_token_file": "peer-token",
+                "identity": "current",
+            }
+        )
+        served = serve_recorder(monkeypatch)
+
+        result = runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+
+        assert result.exit_code == 0, result.output
+        assert served.app is not None
+        assert set(served.app.state.drivers) == {"HOT1"}
+        assert served.app.state.peer_auth is not None
+        assert served.app.state.store is None
+
+    def test_a_storage_root_that_is_missing_stops_the_daemon(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        storage_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        self._daemon(tmp_path, storage_yaml, valid_cluster)
+        (tmp_path / "hot1").rmdir()
+        write_cluster(valid_cluster)
+        storage_yaml.update({"cluster_config": "cluster.yaml", "identity": "current"})
+        served = serve_recorder(monkeypatch)
+
+        result = runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+
+        assert result.exit_code == 2
+        assert "does not exist" in result.output
+        assert "Traceback" not in result.output
+        assert served.app is None
+
+    def test_the_controller_can_reach_its_daemons(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        controller_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        write_cluster(valid_cluster)
+        (tmp_path / "peer-token").write_text("s3cret\n")
+        (tmp_path / "peer-token").chmod(0o600)
+        controller_yaml["peer_token_file"] = "peer-token"
+        served = serve_recorder(monkeypatch)
+
+        result = runner.invoke(cli.app, ["--config", str(write_bootstrap(controller_yaml))])
+
+        assert result.exit_code == 0, result.output
+        assert served.app is not None
+        assert served.app.state.store is not None

@@ -6,17 +6,24 @@ from fastapi import APIRouter, Depends, FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stashd import __version__
-from stashd.api.deps import principal
+from stashd.api.deps import peer, principal
 from stashd.api.errors import install_error_handlers
 from stashd.api.health import health_router
+from stashd.api.internal import filesets as internal_filesets
 from stashd.api.middleware import RequestContextMiddleware
 from stashd.api.public import allocations, filesets, topology, transfers
+from stashd.auth.owners import OwnerLookup, SystemOwnerLookup
 from stashd.auth.provider import AuthProvider
+from stashd.auth.token import TokenAuthProvider
+from stashd.clients.filesets import FilesetStore
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig
+from stashd.domain.clock import Clock, SystemClock
+from stashd.drivers.base import StorageDriver
 from stashd.schemas.errors import ErrorEnvelope
 
 API_PREFIX = "/api/v1"
+INTERNAL_PREFIX = "/internal/v1"
 
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -45,12 +52,26 @@ def public_router() -> APIRouter:
     return router
 
 
+def internal_router() -> APIRouter:
+    """Both roles serve this; a peer token is the only credential it accepts."""
+    router = APIRouter(
+        prefix=INTERNAL_PREFIX, dependencies=[Depends(peer)], responses=ERROR_RESPONSES
+    )
+    router.include_router(internal_filesets.router)
+    return router
+
+
 def create_app(
     bootstrap: BootstrapConfig,
     cluster: ClusterConfig | None = None,
     *,
     auth: AuthProvider | None = None,
     sessions: async_sessionmaker[AsyncSession] | None = None,
+    peer_auth: TokenAuthProvider | None = None,
+    drivers: dict[str, StorageDriver] | None = None,
+    store: FilesetStore | None = None,
+    owners: OwnerLookup | None = None,
+    clock: Clock | None = None,
 ) -> FastAPI:
     """Build the app for one process. Only a controller serves ``/api/v1``."""
     app = FastAPI(title="stashd", version=__version__)
@@ -58,9 +79,15 @@ def create_app(
     app.state.cluster = cluster
     app.state.auth = auth
     app.state.sessions = sessions
+    app.state.peer_auth = peer_auth
+    app.state.drivers = drivers
+    app.state.store = store
+    app.state.owners = owners or SystemOwnerLookup()
+    app.state.clock = clock or SystemClock()
     app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)
     app.include_router(health_router(bootstrap, cluster))
     if bootstrap.is_controller:
         app.include_router(public_router())
+    app.include_router(internal_router())
     return app
