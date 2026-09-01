@@ -1,6 +1,7 @@
 """Transfer responses."""
 
 from datetime import datetime
+from typing import Literal
 
 from stashd.domain.transfers import TransferKind, TransferState
 from stashd.schemas.base import Wire
@@ -31,3 +32,17 @@ class Transfer(Wire):
 class Transfers(Wire):
     transfers: list[Transfer]
     next_cursor: str | None
+
+
+class FilesetRef(Wire):
+    storage: str
+    fileset: str
+
+
+class SubmitRelease(Wire):
+    """POST /transfers. Only `release` is accepted so far."""
+
+    kind: Literal[TransferKind.RELEASE]
+    target: FilesetRef
+    force: bool = False
+    user: str | None = None

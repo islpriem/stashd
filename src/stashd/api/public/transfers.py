@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 
-from stashd.api.deps import Session
+from stashd.api.deps import Caller, Cluster, Session, Store, Ticking, caller_is_admin
 from stashd.domain.transfers import TransferKind, TransferState
 from stashd.models import Transfer as TransferRow
-from stashd.schemas.transfers import Transfer, Transfers
+from stashd.schemas.transfers import SubmitRelease, Transfer, Transfers
 from stashd.services import transfers as service
+from stashd.services import transfers_release as release
 
 router = APIRouter()
 
@@ -62,3 +63,26 @@ async def list_transfers(
 @router.get("/transfers/{transfer_id}")
 async def get_transfer(session: Session, transfer_id: int) -> Transfer:
     return to_wire(await service.get_transfer(session, transfer_id))
+
+
+@router.post("/transfers", status_code=status.HTTP_201_CREATED)
+async def submit_transfer(
+    caller: Caller,
+    session: Session,
+    cluster: Cluster,
+    store: Store,
+    clock: Ticking,
+    body: SubmitRelease,
+) -> Transfer:
+    """Submit a transfer. Only `release` exists so far; it runs synchronously."""
+    released = await release.release_fileset(
+        session,
+        store=store,
+        clock=clock,
+        actor=caller,
+        is_admin=caller_is_admin(caller, cluster),
+        subject_user=body.user or caller.username,
+        storage_id=body.target.storage,
+        name=body.target.fileset,
+    )
+    return to_wire(released)
