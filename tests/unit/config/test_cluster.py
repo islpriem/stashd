@@ -58,6 +58,32 @@ class TestValidConfig:
             first.content_hash != load_cluster_config(write_cluster(valid_cluster)).content_hash
         )
 
+    def test_a_daemon_is_addressable_by_id(
+        self, write_cluster: WriteCluster, valid_cluster: Cluster
+    ) -> None:
+        config = load_cluster_config(write_cluster(valid_cluster))
+
+        assert config.daemon("loc2hot").url == "http://127.0.0.1:8002"
+        assert config.daemon("loc2hot").host == "stash-loc2.example.org"
+        assert config.daemon_for("LOC2HOT").id == "loc2hot"
+
+    def test_the_ssh_host_defaults_to_the_one_in_the_url(
+        self, write_cluster: WriteCluster, valid_cluster: Cluster
+    ) -> None:
+        config = load_cluster_config(write_cluster(valid_cluster))
+
+        assert config.daemon("hot1").host == "127.0.0.1"
+
+    def test_the_fileset_mode_defaults_to_0700_and_is_per_storage(
+        self, write_cluster: WriteCluster, valid_cluster: Cluster
+    ) -> None:
+        valid_cluster["storages"][1]["fileset_mode"] = "0750"
+
+        config = load_cluster_config(write_cluster(valid_cluster))
+
+        assert config.storage("HOT1").fileset_mode == 0o700
+        assert config.storage("LOC2HOT").fileset_mode == 0o750
+
     def test_storages_are_addressable_by_id(
         self, write_cluster: WriteCluster, valid_cluster: Cluster
     ) -> None:
@@ -75,6 +101,9 @@ class TestLookup:
 
         with pytest.raises(KeyError):
             config.storage("NOPE")
+
+        with pytest.raises(KeyError):
+            config.daemon("nope")
 
 
 class TestRejection:
@@ -189,6 +218,28 @@ class TestRejection:
         valid_cluster["storages"][1]["fill_limit"] = fill_limit
 
         assert "fill_limit" in self._problems(write_cluster, valid_cluster)
+
+    def test_a_storage_whose_daemon_is_not_declared(
+        self, write_cluster: WriteCluster, valid_cluster: Cluster
+    ) -> None:
+        valid_cluster["storages"][1]["daemon"] = "nobody"
+
+        assert "unknown daemon 'nobody'" in self._problems(write_cluster, valid_cluster)
+
+    def test_duplicate_daemon_id(
+        self, write_cluster: WriteCluster, valid_cluster: Cluster
+    ) -> None:
+        valid_cluster["daemons"][1]["id"] = "hot1"
+
+        assert "duplicate daemon id 'hot1'" in self._problems(write_cluster, valid_cluster)
+
+    @pytest.mark.parametrize("mode", ["0999", "07777", ["0700"], "rwx"])
+    def test_a_mode_that_is_not_an_octal_permission_is_refused(
+        self, write_cluster: WriteCluster, valid_cluster: Cluster, mode: object
+    ) -> None:
+        valid_cluster["storages"][0]["fileset_mode"] = mode
+
+        assert "fileset_mode" in self._problems(write_cluster, valid_cluster)
 
     def test_unknown_retry_class(
         self, write_cluster: WriteCluster, valid_cluster: Cluster

@@ -37,6 +37,13 @@ class DaemonRole(StrEnum):
     STORAGE = "storage"
 
 
+class IdentityKind(StrEnum):
+    """How a storage daemon acts as the requesting user."""
+
+    SUDO = "sudo"
+    CURRENT = "current"
+
+
 class LogLevel(StrEnum):
     DEBUG = "DEBUG"
     INFO = "INFO"
@@ -92,7 +99,11 @@ class BootstrapConfig(Section):
     broker: Broker | None = None
     database: Database | None = None
     logging: Logging = Logging()
+    # The controller authors this; a storage daemon keeps a local copy of what it fetched.
     cluster_config: ConfigRelativePath | None = None
+    # The bearer token internal requests carry.
+    peer_token_file: ConfigRelativePath | None = None
+    identity: IdentityKind = IdentityKind.SUDO
 
     @property
     def is_controller(self) -> bool:

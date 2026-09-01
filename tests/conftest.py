@@ -20,6 +20,10 @@ VALID_CLUSTER: dict[str, Any] = {
         {"id": "LOC1", "name": "Site 1"},
         {"id": "LOC2", "name": "Site 2"},
     ],
+    "daemons": [
+        {"id": "hot1", "url": "http://127.0.0.1:8001"},
+        {"id": "loc2hot", "url": "http://127.0.0.1:8002", "host": "stash-loc2.example.org"},
+    ],
     "storages": [
         {
             "id": "HOT1",
@@ -42,7 +46,7 @@ VALID_CLUSTER: dict[str, Any] = {
             "fill_limit": 0.95,
             "default_user_allocation_limit": "100Gi",
             "daemon": "loc2hot",
-            "daemon_host": "stash-loc2.example.org",
+            "fileset_mode": "0700",
         },
     ],
     "limits": {

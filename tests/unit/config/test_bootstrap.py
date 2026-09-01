@@ -97,6 +97,53 @@ class TestRoleSpecificRequirements:
         assert "needs a controller" in problems(write_bootstrap, storage_yaml)
 
 
+class TestPeersAndStorageDaemons:
+    def test_a_storage_daemon_may_name_a_local_cluster_config(
+        self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+    ) -> None:
+        storage_yaml["cluster_config"] = "cluster.yaml"
+
+        config = load_bootstrap_config(write_bootstrap(storage_yaml))
+
+        assert config.cluster_config is not None
+
+    def test_a_peer_token_file_is_optional_and_resolved(
+        self, write_bootstrap: WriteConfig, controller_yaml: dict[str, Any], tmp_path: Path
+    ) -> None:
+        assert load_bootstrap_config(write_bootstrap(controller_yaml)).peer_token_file is None
+
+        controller_yaml["peer_token_file"] = "peer-token"
+
+        config = load_bootstrap_config(write_bootstrap(controller_yaml))
+
+        assert config.peer_token_file == tmp_path / "peer-token"
+
+
+class TestIdentity:
+    def test_a_daemon_becomes_the_user_with_sudo_unless_told_otherwise(
+        self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+    ) -> None:
+        from stashd.config.bootstrap import IdentityKind
+
+        assert (
+            load_bootstrap_config(write_bootstrap(storage_yaml)).identity is IdentityKind.SUDO
+        )
+
+        storage_yaml["identity"] = "current"
+
+        assert (
+            load_bootstrap_config(write_bootstrap(storage_yaml)).identity
+            is IdentityKind.CURRENT
+        )
+
+    def test_an_unknown_identity_mechanism_is_refused(
+        self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+    ) -> None:
+        storage_yaml["identity"] = "magic"
+
+        assert "identity" in problems(write_bootstrap, storage_yaml)
+
+
 class TestPathsAndDefaults:
     def test_relative_paths_resolve_against_the_config_file(
         self, write_bootstrap: WriteConfig, controller_yaml: dict[str, Any], tmp_path: Path

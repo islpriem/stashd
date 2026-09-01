@@ -13,6 +13,7 @@ from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self
+from urllib.parse import urlparse
 
 from pydantic import (
     BaseModel,
@@ -50,6 +51,19 @@ def _duration(value: Any) -> timedelta:
     return parse_duration(value)
 
 
+def _mode(value: Any) -> int:
+    """A POSIX permission, written as it would be typed into chmod: 0700, 750."""
+    if isinstance(value, bool) or not isinstance(value, int | str):
+        raise ValueError(f"invalid fileset_mode {value!r}: expected e.g. 0700")
+    try:
+        mode = int(str(value), 8)
+    except ValueError:
+        raise ValueError(f"invalid fileset_mode {value!r}: expected octal, e.g. 0700") from None
+    if not 0 <= mode <= 0o777:
+        raise ValueError(f"invalid fileset_mode {value!r}: outside 0000..0777")
+    return mode
+
+
 def _absolute(value: Any) -> Path:
     path = Path(value)
     if not path.is_absolute():
@@ -58,6 +72,7 @@ def _absolute(value: Any) -> Path:
 
 
 ByteSize = Annotated[int, BeforeValidator(_size)]
+FilesetMode = Annotated[int, BeforeValidator(_mode)]
 BytesPerSecond = Annotated[int, BeforeValidator(_rate)]
 Duration = Annotated[timedelta, BeforeValidator(_duration)]
 AbsolutePath = Annotated[Path, BeforeValidator(_absolute)]
@@ -104,6 +119,20 @@ class Location(Section):
     enabled: bool = True
 
 
+class Daemon(Section):
+    """A stashd process the controller talks to, and the host its storages are on."""
+
+    id: DaemonId
+    url: str
+    host: str | None = None
+
+    @model_validator(mode="after")
+    def _default_host_to_the_url(self) -> Self:
+        if self.host is None:
+            object.__setattr__(self, "host", urlparse(self.url).hostname or self.url)
+        return self
+
+
 class Storage(Section):
     id: StorageId
     location: LocationId
@@ -118,7 +147,7 @@ class Storage(Section):
         default=None, alias="default_user_allocation_limit"
     )
     daemon: DaemonId
-    daemon_host: str | None = None
+    fileset_mode: FilesetMode = 0o700
     enabled: bool = True
 
     @model_validator(mode="before")
@@ -200,6 +229,7 @@ class Retention(Section):
 class ClusterConfig(Section):
     revision: int = Field(ge=0)
     locations: list[Location]
+    daemons: list[Daemon]
     storages: list[Storage]
     limits: Limits
     scheduling: Scheduling
@@ -211,6 +241,15 @@ class ClusterConfig(Section):
     def content_hash(self) -> str:
         payload = json.dumps(self.model_dump(mode="json", by_alias=True), sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()
+
+    def daemon(self, daemon_id: str) -> Daemon:
+        for daemon in self.daemons:
+            if daemon.id == daemon_id:
+                return daemon
+        raise KeyError(daemon_id)
+
+    def daemon_for(self, storage_id: str) -> Daemon:
+        return self.daemon(self.storage(storage_id).daemon)
 
     def storage(self, storage_id: str) -> Storage:
         for storage in self.storages:
@@ -229,6 +268,7 @@ class ClusterConfig(Section):
         problems = [
             *_duplicate_ids("location", (loc.id for loc in self.locations)),
             *_duplicate_ids("storage", (s.id for s in self.storages)),
+            *_duplicate_ids("daemon", (d.id for d in self.daemons)),
             *self._storage_problems(),
             *self._nested_root_problems(),
             *self._route_problems(),
@@ -242,12 +282,15 @@ class ClusterConfig(Section):
 
     def _storage_problems(self) -> list[str]:
         known_locations = {loc.id for loc in self.locations}
+        known_daemons = {daemon.id for daemon in self.daemons}
         problems = []
         for storage in self.storages:
             if storage.location not in known_locations:
                 problems.append(
                     f"storage {storage.id!r}: unknown location {storage.location!r}"
                 )
+            if storage.daemon not in known_daemons:
+                problems.append(f"storage {storage.id!r}: unknown daemon {storage.daemon!r}")
             if storage.has_role(StorageRole.CACHE) and storage.capacity_bytes is None:
                 problems.append(f"cache storage {storage.id!r} needs a capacity")
         return problems
