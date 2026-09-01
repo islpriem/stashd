@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+from pydantic import Field
+
 from stashd.domain.filesets import FilesetKind, FilesetState
 from stashd.schemas.base import Wire
 
@@ -32,3 +34,12 @@ class Fileset(Wire):
 
 class Filesets(Wire):
     filesets: list[Fileset]
+
+
+class CreateFileset(Wire):
+    """POST /filesets: an output fileset with a reserved size."""
+
+    storage: str
+    name: str
+    size_bytes: int = Field(gt=0)
+    user: str | None = None

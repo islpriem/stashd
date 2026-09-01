@@ -2,12 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, status
 
-from stashd.api.deps import Session
+from stashd.api.deps import Caller, Cluster, Session, Store, Ticking, subject_owner
 from stashd.domain.filesets import FilesetKind, FilesetState
 from stashd.models import Fileset as FilesetRow
-from stashd.schemas.filesets import Fileset, Filesets
+from stashd.schemas.filesets import CreateFileset, Fileset, Filesets
 from stashd.services import filesets as service
 
 router = APIRouter()
@@ -61,3 +61,28 @@ async def list_filesets(
 @router.get("/filesets/{fileset_id}")
 async def get_fileset(session: Session, fileset_id: int) -> Fileset:
     return to_wire(await service.get_fileset(session, fileset_id))
+
+
+@router.post("/filesets", status_code=status.HTTP_201_CREATED)
+async def create_fileset(
+    request: Request,
+    caller: Caller,
+    session: Session,
+    cluster: Cluster,
+    store: Store,
+    clock: Ticking,
+    body: CreateFileset,
+) -> Fileset:
+    owner = subject_owner(request, caller, body.user)
+    created = await service.create_output_fileset(
+        session,
+        cluster=cluster,
+        store=store,
+        clock=clock,
+        actor=caller,
+        owner=owner,
+        storage_id=body.storage,
+        name=body.name,
+        size_bytes=body.size_bytes,
+    )
+    return to_wire(created)
