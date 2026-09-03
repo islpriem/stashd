@@ -13,6 +13,10 @@ from stashd.identity.base import DEFAULT_TIMEOUT, Completed, IdentityError
 
 
 class CurrentUserIdentity:
+    def wrap(self, owner: Owner, argv: Sequence[str]) -> list[str]:
+        del owner
+        return list(argv)
+
     def run(
         self, owner: Owner, argv: Sequence[str], *, timeout: float = DEFAULT_TIMEOUT
     ) -> Completed:

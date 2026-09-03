@@ -24,11 +24,14 @@ class SudoIdentity:
     def __init__(self, runner: Runner = run_subprocess) -> None:
         self._run = runner
 
+    def wrap(self, owner: Owner, argv: Sequence[str]) -> list[str]:
+        # Privilege comes from a sudoers rule for this daemon, not from STASH.
+        return ["sudo", "-n", "-u", owner.user, "--", *argv]
+
     def run(
         self, owner: Owner, argv: Sequence[str], *, timeout: float = DEFAULT_TIMEOUT
     ) -> Completed:
-        # Privilege comes from a sudoers rule for this daemon, not from STASH.
-        command = ["sudo", "-n", "-u", owner.user, "--", *argv]
+        command = self.wrap(owner, argv)
         try:
             return self._run(command, timeout)
         except subprocess.TimeoutExpired as expired:

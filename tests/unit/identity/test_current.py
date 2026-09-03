@@ -30,3 +30,7 @@ def test_a_missing_binary_is_an_identity_error() -> None:
 def test_a_command_that_overruns_its_timeout_is_stopped() -> None:
     with pytest.raises(IdentityError, match="timed out"):
         CurrentUserIdentity().run(ALICE, ["sleep", "5"], timeout=0.05)
+
+
+def test_wrapping_changes_nothing() -> None:
+    assert CurrentUserIdentity().wrap(ALICE, ["rsync", "-a"]) == ["rsync", "-a"]

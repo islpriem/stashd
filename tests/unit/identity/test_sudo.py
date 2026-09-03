@@ -72,3 +72,10 @@ def test_the_timeout_is_passed_through() -> None:
     SudoIdentity(runner).run(ALICE, ["true"], timeout=12.5)
 
     assert seen == [12.5]
+
+
+def test_a_command_can_be_wrapped_for_a_caller_that_runs_it_itself() -> None:
+    """The transfer engine owns its process so it can stream and kill it."""
+    wrapped = SudoIdentity().wrap(ALICE, ["rsync", "-a", "/src/", "/dst/"])
+
+    assert wrapped == ["sudo", "-n", "-u", "alice", "--", "rsync", "-a", "/src/", "/dst/"]
