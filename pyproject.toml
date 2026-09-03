@@ -40,7 +40,10 @@ packages = ["src/stashd"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config"
-markers = ["integration: needs the PostgreSQL from compose.yaml"]
+markers = [
+    "integration: needs the PostgreSQL from compose.yaml",
+    "execution: runs real processes; the rsync ones need GNU rsync",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

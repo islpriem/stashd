@@ -41,6 +41,12 @@
 - `SIGHUP` on the controller re-reads the cluster config. A changed config with an
   unchanged revision is refused: the revision is what daemons compare against.
 
+- The rsync transfer engine: one fixed rsync command,
+  run as the requesting user through the Identity, with progress read from
+  `--info=progress2`, statistics from `stats2`, every rsync exit code mapped to a stable
+  failure class, and cancellation that kills the whole process group and leaves the
+  partial data.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,
