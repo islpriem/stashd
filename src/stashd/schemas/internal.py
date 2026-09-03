@@ -121,3 +121,19 @@ class EventAccepted(Wire):
     transfer_id: int
     applied: bool
     state: str
+
+
+class Registration(Wire):
+    """What a daemon tells the controller when it starts and while it runs."""
+
+    daemon_id: str
+    storages: list[str]
+    config_revision: int
+    version: str
+
+
+class Registered(Wire):
+    daemon_id: str
+    config_revision: int
+    # True when the controller has moved on and the daemon should fetch again.
+    refresh_needed: bool
