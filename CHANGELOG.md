@@ -61,6 +61,10 @@
 - A storage daemon runs transfers beside its requests, bounded by `worker_pool_size`,
   which may not be smaller than `concurrency.per_storage`.
 
+- Daemons register with the controller at startup and on every config refresh, and are
+  told when the controller has moved on. `/storages` reports when each daemon was
+  last seen and what revision it is on.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

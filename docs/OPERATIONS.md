@@ -57,6 +57,18 @@ fails instead.
 A daemon with no token configured refuses every internal request. MUNGE credentials do not
 open the internal API. Rotate by writing a new token on every peer and restarting.
 
+## Starting order
+
+A storage daemon fetches the cluster config from the controller at startup and caches it
+under `cache_dir`. On a host that has never run one, the controller must be up first;
+after that the daemon starts from its cache and reports itself degraded until it reaches
+the controller again. Each daemon announces itself on startup and on every refresh, so
+`stash storages` shows when it was last seen and what revision it is on.
+
+`worker_pool_size` bounds how many transfers a daemon runs at once. It may not be smaller
+than `concurrency.per_storage`, or the daemon would be handed more work than it can run;
+it refuses to start in that case.
+
 ## Backups
 
 Everything STASH knows is in PostgreSQL. A lost database means lost accounting for data

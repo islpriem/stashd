@@ -6,6 +6,18 @@
 #   docker compose exec e2e /workspace/stashd/dev/e2e/lifecycle.sh
 set -eu
 
+# A previous run may still hold the ports; take those down first.
+stop_daemons() {
+    me=$$
+    for entry in /proc/[0-9]*; do
+        pid=$(basename "$entry")
+        [ "$pid" = "$me" ] && continue
+        command=$(tr "\0" " " < "$entry/cmdline" 2>/dev/null || true)
+        case "$command" in */bin/stashd*) kill -9 "$pid" 2>/dev/null || true ;; esac
+    done
+}
+stop_daemons
+
 STASHD=/opt/venvs/stashd
 CONTROLLER=http://127.0.0.1:8000
 USER_NAME=${STASH_USER:-mmustermann}
