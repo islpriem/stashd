@@ -45,7 +45,12 @@ def test_controller_readyz_reports_its_config_revision(controller: TestClient) -
     response = controller.get("/readyz")
 
     assert response.status_code == 200
-    assert response.json() == {"ready": True, "config_revision": 42, "checks": {}}
+    assert response.json() == {
+        "ready": True,
+        "degraded": False,
+        "config_revision": 42,
+        "checks": {},
+    }
 
 
 def test_storage_daemon_is_not_ready_without_a_cluster_config(daemon: TestClient) -> None:
@@ -54,6 +59,7 @@ def test_storage_daemon_is_not_ready_without_a_cluster_config(daemon: TestClient
     assert response.status_code == 503
     assert response.json() == {
         "ready": False,
+        "degraded": True,
         "config_revision": None,
         "checks": {"cluster_config": "not fetched"},
     }
@@ -66,3 +72,18 @@ def test_storage_daemon_does_not_serve_the_public_api(
 
     assert not [route for route in app.routes if "/api/v1" in getattr(route, "path", "")]
     assert TestClient(app).get("/api/v1/filesets").status_code == 404
+
+
+def test_a_daemon_on_a_cached_config_reports_itself_degraded(
+    storage_bootstrap: BootstrapConfig, cluster_config: ClusterConfig
+) -> None:
+    """It can work, so it is ready; it is not running on what the controller has."""
+    client = TestClient(create_app(storage_bootstrap, cluster_config, degraded=True))
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready"] is True
+    assert body["degraded"] is True
+    assert "cache" in body["checks"]["cluster_config"]

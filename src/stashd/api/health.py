@@ -1,11 +1,10 @@
 """Liveness and readiness, served by both roles."""
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 
 from stashd import __version__
 from stashd.config.bootstrap import BootstrapConfig
-from stashd.config.cluster import ClusterConfig
 
 
 class Health(BaseModel):
@@ -17,11 +16,12 @@ class Health(BaseModel):
 
 class Readiness(BaseModel):
     ready: bool
+    degraded: bool
     config_revision: int | None
     checks: dict[str, str]
 
 
-def health_router(bootstrap: BootstrapConfig, cluster: ClusterConfig | None) -> APIRouter:
+def health_router(bootstrap: BootstrapConfig) -> APIRouter:
     router = APIRouter()
 
     @router.get("/healthz")
@@ -34,14 +34,25 @@ def health_router(bootstrap: BootstrapConfig, cluster: ClusterConfig | None) -> 
         )
 
     @router.get("/readyz")
-    async def readyz(response: Response) -> Readiness:
-        checks = {} if cluster is not None else {"cluster_config": "not fetched"}
-        if checks:
+    async def readyz(request: Request, response: Response) -> Readiness:
+        """Ready means it can work. Degraded means it is working on a cached config."""
+        current = request.app.state.cluster
+        if current is None:
             response.status_code = 503
+            return Readiness(
+                ready=False,
+                degraded=True,
+                config_revision=None,
+                checks={"cluster_config": "not fetched"},
+            )
+        degraded = bool(request.app.state.config_degraded)
         return Readiness(
-            ready=not checks,
-            config_revision=cluster.revision if cluster else None,
-            checks=checks,
+            ready=True,
+            degraded=degraded,
+            config_revision=current.revision,
+            checks={"cluster_config": "from cache: the controller was unreachable"}
+            if degraded
+            else {},
         )
 
     return router
