@@ -3,9 +3,10 @@
 from fastapi import APIRouter
 
 from stashd import __version__
-from stashd.api.deps import Caller, Cluster, caller_is_admin
+from stashd.api.deps import Caller, Cluster, Session, caller_is_admin
 from stashd.drivers.factory import capabilities_for
 from stashd.schemas.topology import Location, Locations, Storage, Storages, WhoAmI
+from stashd.services.daemons import known_daemons
 
 API_VERSION = "v1"
 
@@ -35,7 +36,8 @@ async def locations(config: Cluster) -> Locations:
 
 
 @router.get("/storages")
-async def storages(config: Cluster) -> Storages:
+async def storages(config: Cluster, session: Session) -> Storages:
+    seen = await known_daemons(session, [storage.daemon for storage in config.storages])
     return Storages(
         storages=[
             Storage(
@@ -52,6 +54,12 @@ async def storages(config: Cluster) -> Storages:
                 drained=False,
                 enabled=storage.enabled,
                 quota_enforced=capabilities_for(storage.driver).native_quota,
+                daemon_seen_at=seen[storage.daemon].last_seen_at
+                if storage.daemon in seen
+                else None,
+                daemon_config_revision=seen[storage.daemon].config_revision
+                if storage.daemon in seen
+                else None,
             )
             for storage in config.storages
         ]

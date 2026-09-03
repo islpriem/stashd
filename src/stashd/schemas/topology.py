@@ -1,5 +1,7 @@
 """Identity and topology responses."""
 
+from datetime import datetime
+
 from stashd.config.cluster import Driver, StorageRole, Tier
 from stashd.schemas.base import Wire
 
@@ -39,6 +41,9 @@ class Storage(Wire):
     # False where the driver cannot hold a directory quota: the allocation is then a
     # reservation in STASH, and an overrun is only found afterwards.
     quota_enforced: bool
+    # What the daemon serving this storage last told the controller; null until it does.
+    daemon_seen_at: datetime | None
+    daemon_config_revision: int | None
 
 
 class Storages(Wire):

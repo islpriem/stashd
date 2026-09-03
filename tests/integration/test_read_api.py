@@ -429,3 +429,43 @@ class TestLimits:
         body = (await api.get("/limits", params={"user": "jdoe"})).json()
 
         assert [entry["user"] for entry in body["limits"]] == ["jdoe"]
+
+
+class TestStorages:
+    """The topology, which needs the database only for what the daemons reported."""
+
+    async def test_storages_carry_roles_tier_driver_and_capacity(
+        self, api: httpx2.AsyncClient
+    ) -> None:
+        storages = {row["id"]: row for row in (await api.get("/storages")).json()["storages"]}
+
+        assert storages["LOC2HOT"] == {
+            "id": "LOC2HOT",
+            "location": "LOC2",
+            "roles": ["cache"],
+            "tier": "hot",
+            "driver": "posix",
+            "fileset_prefix": "/cache/loc2",
+            "capacity_bytes": 500 * 1024**4,
+            "fill_limit": 0.95,
+            "default_user_allocation_limit_bytes": 100 * GIB,
+            "daemon": "loc2hot",
+            "drained": False,
+            "enabled": True,
+            "quota_enforced": False,
+            "daemon_seen_at": None,
+            "daemon_config_revision": None,
+        }
+        assert storages["HOT1"]["roles"] == ["source"]
+        assert storages["HOT1"]["capacity_bytes"] is None
+
+    async def test_a_storage_says_whether_its_allocation_is_enforced(
+        self, api: httpx2.AsyncClient
+    ) -> None:
+        """On plain POSIX an allocation is a reservation, not a limit the filesystem holds."""
+        storages = (await api.get("/storages")).json()["storages"]
+
+        assert {row["id"]: row["quota_enforced"] for row in storages} == {
+            "HOT1": False,
+            "LOC2HOT": False,
+        }
