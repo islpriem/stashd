@@ -98,14 +98,28 @@ class TestRoleSpecificRequirements:
 
 
 class TestPeersAndStorageDaemons:
-    def test_a_storage_daemon_may_name_a_local_cluster_config(
+    def test_a_storage_daemon_may_not_name_a_local_cluster_config(
         self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
     ) -> None:
+        """It fetches from the controller and caches; a local file would be a third truth."""
         storage_yaml["cluster_config"] = "cluster.yaml"
 
-        config = load_bootstrap_config(write_bootstrap(storage_yaml))
+        assert "fetches the cluster config" in problems(write_bootstrap, storage_yaml)
 
-        assert config.cluster_config is not None
+    def test_the_refresh_interval_has_a_default_and_is_configurable(
+        self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+    ) -> None:
+        from datetime import timedelta
+
+        assert load_bootstrap_config(
+            write_bootstrap(storage_yaml)
+        ).config_refresh_interval == timedelta(seconds=60)
+
+        storage_yaml["config_refresh_interval"] = "5m"
+
+        assert load_bootstrap_config(
+            write_bootstrap(storage_yaml)
+        ).config_refresh_interval == timedelta(minutes=5)
 
     def test_a_peer_token_file_is_optional_and_resolved(
         self, write_bootstrap: WriteConfig, controller_yaml: dict[str, Any], tmp_path: Path

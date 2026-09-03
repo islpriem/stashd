@@ -5,6 +5,7 @@ policy live in the cluster config. Relative paths are resolved against the direc
 the config file, so a checkout can be run without absolute paths.
 """
 
+from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self
@@ -21,6 +22,7 @@ from pydantic.functional_validators import BeforeValidator
 
 from stashd.config._yaml import problems_from, read_yaml_mapping
 from stashd.config.errors import ConfigError
+from stashd.domain.units import parse_duration
 
 
 def _relative_to_config(value: Any, info: ValidationInfo) -> Path:
@@ -30,6 +32,17 @@ def _relative_to_config(value: Any, info: ValidationInfo) -> Path:
 
 
 ConfigRelativePath = Annotated[Path, BeforeValidator(_relative_to_config)]
+
+
+def _interval(value: Any) -> timedelta:
+    if isinstance(value, timedelta):
+        return value
+    if not isinstance(value, str):
+        raise ValueError(f"invalid duration {value!r}: expected a string such as 60s")
+    return parse_duration(value)
+
+
+Duration = Annotated[timedelta, BeforeValidator(_interval)]
 
 
 class DaemonRole(StrEnum):
@@ -99,8 +112,9 @@ class BootstrapConfig(Section):
     broker: Broker | None = None
     database: Database | None = None
     logging: Logging = Logging()
-    # The controller authors this; a storage daemon keeps a local copy of what it fetched.
+    # The controller authors this. A daemon fetches instead, and caches under cache_dir.
     cluster_config: ConfigRelativePath | None = None
+    config_refresh_interval: Duration = timedelta(seconds=60)
     # The bearer token internal requests carry.
     peer_token_file: ConfigRelativePath | None = None
     identity: IdentityKind = IdentityKind.SUDO
@@ -124,6 +138,11 @@ class BootstrapConfig(Section):
                 problems.append("a storage daemon needs a broker")
             if not self.node.storages:
                 problems.append("a storage daemon needs at least one storage in self.storages")
+            if self.cluster_config is not None:
+                problems.append(
+                    "a storage daemon fetches the cluster config from the controller and "
+                    "caches it under cache_dir; remove cluster_config"
+                )
         if (self.server.tls_cert is None) != (self.server.tls_key is None):
             problems.append("server: tls_cert and tls_key must be given together")
         if problems:
