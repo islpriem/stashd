@@ -8,13 +8,15 @@ second at load time; nothing downstream parses a suffix.
 import hashlib
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self
 from urllib.parse import urlparse
 
+import yaml
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -336,9 +338,47 @@ def _is_inside(inner: Path, outer: Path) -> bool:
     return inner != outer and outer in inner.parents
 
 
-def load_cluster_config(path: Path) -> ClusterConfig:
-    data = read_yaml_mapping(path)
+@dataclass(frozen=True, slots=True)
+class ConfigDocument:
+    """A validated cluster config together with the text it came from.
+
+    The controller serves the text rather than a re-serialisation: what a daemon
+    validates is then exactly what the operator wrote, and the hash covers it.
+    """
+
+    config: ClusterConfig
+    text: str
+
+    @property
+    def revision(self) -> int:
+        return self.config.revision
+
+    @property
+    def content_hash(self) -> str:
+        return self.config.content_hash
+
+
+def parse_cluster_config(data: Mapping[str, Any], source: Path) -> ClusterConfig:
     try:
-        return ClusterConfig.model_validate(data)
+        return ClusterConfig.model_validate(dict(data))
     except ValidationError as exc:
-        raise ConfigError(path, problems_from(exc)) from exc
+        raise ConfigError(source, problems_from(exc)) from exc
+
+
+def load_cluster_config(path: Path) -> ClusterConfig:
+    return parse_cluster_config(read_yaml_mapping(path), path)
+
+
+def load_cluster_document(path: Path) -> ConfigDocument:
+    return ConfigDocument(config=load_cluster_config(path), text=path.read_text())
+
+
+def parse_cluster_document(text: str, source: Path = Path("<served>")) -> ConfigDocument:
+    """Validate a config a daemon was handed. It is never trusted for being ours."""
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(source, [f"not valid YAML: {exc}"]) from exc
+    if not isinstance(data, dict):
+        raise ConfigError(source, ["expected a mapping at the top level"])
+    return ConfigDocument(config=parse_cluster_config(data, source), text=text)
