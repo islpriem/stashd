@@ -20,7 +20,7 @@ chmod 0755 /srv/stash/loc2hot
 chown "$USER_NAME" /srv/stash/loc2hot
 
 UV_PROJECT_ENVIRONMENT=$STASHD uv run alembic -x config=dev/controller-e2e.yaml upgrade head
-UV_PROJECT_ENVIRONMENT=$STASHD uv run stashd --config dev/daemon-loc2hot-e2e.yaml &
+UV_PROJECT_ENVIRONMENT=$STASHD uv run stashd --config dev/daemon-e2e.yaml &
 UV_PROJECT_ENVIRONMENT=$STASHD uv run stashd --config dev/controller-e2e.yaml &
 trap 'kill %1 %2 2>/dev/null || true' EXIT
 curl -sS --retry 30 --retry-delay 1 --retry-connrefused "$CONTROLLER/healthz" > /dev/null

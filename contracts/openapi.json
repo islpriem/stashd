@@ -513,6 +513,89 @@
         "title": "Locations",
         "type": "object"
       },
+      "PathRef": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "storage": {
+            "title": "Storage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storage",
+          "path"
+        ],
+        "title": "PathRef",
+        "type": "object"
+      },
+      "Preflight": {
+        "additionalProperties": false,
+        "description": "What a dry run answers: everything the submission would have decided.",
+        "properties": {
+          "allocation_bytes": {
+            "title": "Allocation Bytes",
+            "type": "integer"
+          },
+          "bytes_total": {
+            "title": "Bytes Total",
+            "type": "integer"
+          },
+          "estimated_duration_seconds": {
+            "title": "Estimated Duration Seconds",
+            "type": "integer"
+          },
+          "estimated_start_seconds": {
+            "title": "Estimated Start Seconds",
+            "type": "integer"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TransferKind"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "refresh": {
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "target",
+          "path",
+          "route",
+          "bytes_total",
+          "file_count",
+          "allocation_bytes",
+          "refresh",
+          "estimated_start_seconds",
+          "estimated_duration_seconds"
+        ],
+        "title": "Preflight",
+        "type": "object"
+      },
       "Storage": {
         "additionalProperties": false,
         "properties": {
@@ -663,7 +746,6 @@
       },
       "SubmitRelease": {
         "additionalProperties": false,
-        "description": "POST /transfers. Only `release` is accepted so far.",
         "properties": {
           "force": {
             "default": false,
@@ -695,6 +777,63 @@
           "target"
         ],
         "title": "SubmitRelease",
+        "type": "object"
+      },
+      "SubmitWarm": {
+        "additionalProperties": false,
+        "description": "A source path into a cached fileset.",
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "warm",
+            "title": "Kind",
+            "type": "string"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PathRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FilesetRef"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "target"
+        ],
+        "title": "SubmitWarm",
         "type": "object"
       },
       "Tier": {
@@ -2027,13 +2166,28 @@
         "summary": "List Transfers"
       },
       "post": {
-        "description": "Submit a transfer. Only `release` exists so far; it runs synchronously.",
+        "description": "Submit a warm or a release. A release runs synchronously.",
         "operationId": "submit_transfer_api_v1_transfers_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SubmitRelease"
+                "discriminator": {
+                  "mapping": {
+                    "release": "#/components/schemas/SubmitRelease",
+                    "warm": "#/components/schemas/SubmitWarm"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitRelease"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SubmitWarm"
+                  }
+                ],
+                "title": "Body"
               }
             }
           },
@@ -2044,7 +2198,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Transfer"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Transfer"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Preflight"
+                    }
+                  ],
+                  "title": "Response Submit Transfer Api V1 Transfers Post"
                 }
               }
             },

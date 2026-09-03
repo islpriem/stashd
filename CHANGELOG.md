@@ -54,6 +54,13 @@
   sequence number: a repeated or late event is acknowledged and ignored, and no transition
   moves a transfer backwards.
 
+- `POST /transfers` accepts a warm: the source is probed on its own daemon, the
+  allocation is the measured size plus headroom, a refresh must say so and uses `--delete`,
+  a different source into the same name is refused, and `dry_run` answers with
+  the numbers and the estimate without persisting anything.
+- A storage daemon runs transfers beside its requests, bounded by `worker_pool_size`,
+  which may not be smaller than `concurrency.per_storage`.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,
