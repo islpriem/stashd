@@ -29,3 +29,11 @@ class FilesetLocation(Wire):
     storage_id: str
     name: str
     path: str
+
+
+class ClusterConfigDocument(Wire):
+    """What a daemon fetches: the text the controller loaded, and what identifies it."""
+
+    revision: int
+    content_hash: str
+    text: str
