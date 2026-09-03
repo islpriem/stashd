@@ -8,7 +8,6 @@ server: { host: 127.0.0.1, port: 8002 }
 broker: { url: "redis://redis:6379/0" }
 logging: { level: INFO, format: json }
 cache_dir: var/loc2hot
-cluster_config: cluster-e2e.yaml
 peer_token_file: peer-token
 # Become the user with sudo -n -u.
 identity: sudo

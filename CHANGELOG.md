@@ -34,6 +34,13 @@
 - `/filesets` returns live filesets before released namesakes, so a client holding
   `STORAGE:name` resolves it to the fileset that exists.
 
+- Config distribution: the controller serves the cluster config it loaded at
+  `GET /internal/v1/cluster-config`; a storage daemon fetches it at startup, caches it
+  under `cache_dir`, refreshes on an interval, starts degraded from the cache when the
+  controller is unreachable, and refuses to start with neither.
+- `SIGHUP` on the controller re-reads the cluster config. A changed config with an
+  unchanged revision is refused: the revision is what daemons compare against.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

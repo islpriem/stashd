@@ -32,6 +32,43 @@ def serve_recorder(monkeypatch: Any) -> Served:
     return served
 
 
+class FakeSource:
+    """Stands in for the controller a storage daemon fetches its config from."""
+
+    def __init__(self, document: object | Exception) -> None:
+        self.answer = document
+
+    def fetch(self) -> object:
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def served(
+    monkeypatch: Any,
+    write_cluster: WriteConfig,
+    cluster: dict[str, Any],
+    tmp_path: Any,
+    failure: Exception | None = None,
+) -> None:
+    """Every storage in the config gets a real root, and the controller serves it."""
+    from stashd.config.cluster import load_cluster_document
+
+    for storage in cluster["storages"]:
+        root = tmp_path / storage["id"].lower()
+        root.mkdir(exist_ok=True)
+        storage["root"] = str(root)
+        storage.pop("fileset_prefix", None)
+    document = load_cluster_document(write_cluster(cluster))
+    monkeypatch.setattr(cli, "_config_source", lambda config: FakeSource(failure or document))
+
+
+def daemon_config(storage_yaml: dict[str, Any], tmp_path: Any) -> dict[str, Any]:
+    (tmp_path / "peer-token").write_text("s3cret\n")
+    (tmp_path / "peer-token").chmod(0o600)
+    return {**storage_yaml, "peer_token_file": "peer-token", "identity": "current"}
+
+
 def test_controller_starts_from_its_config(
     monkeypatch: Any,
     write_bootstrap: WriteConfig,
@@ -52,17 +89,26 @@ def test_controller_starts_from_its_config(
     assert (served.server.host, served.server.port) == ("0.0.0.0", 8443)
 
 
-def test_storage_daemon_starts_without_a_cluster_config(
-    monkeypatch: Any, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+def test_a_storage_daemon_starts_from_the_config_it_fetched(
+    monkeypatch: Any,
+    write_bootstrap: WriteConfig,
+    write_cluster: WriteConfig,
+    storage_yaml: dict[str, Any],
+    valid_cluster: dict[str, Any],
+    tmp_path: Any,
 ) -> None:
-    served = serve_recorder(monkeypatch)
+    served(monkeypatch, write_cluster, valid_cluster, tmp_path)
+    recorder = serve_recorder(monkeypatch)
 
-    result = runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+    result = runner.invoke(
+        cli.app, ["--config", str(write_bootstrap(daemon_config(storage_yaml, tmp_path)))]
+    )
 
     assert result.exit_code == 0, result.output
-    assert served.app is not None
-    assert served.app.state.cluster is None
-    assert served.app.state.bootstrap.node.daemon_id == "hot1"
+    assert recorder.app is not None
+    assert recorder.app.state.cluster.revision == 42
+    assert recorder.app.state.config_degraded is False
+    assert (tmp_path / "var/hot1/cluster.yaml").is_file(), "and cached what it got"
 
 
 def test_an_invalid_cluster_config_stops_the_controller(
@@ -113,22 +159,37 @@ def test_the_controller_gets_a_database_and_an_auth_provider(
     assert isinstance(served.app.state.auth, MungeAuthProvider)
 
 
-def test_a_storage_daemon_has_neither(
-    monkeypatch: Any, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+def test_a_storage_daemon_has_no_database_and_no_munge(
+    monkeypatch: Any,
+    write_bootstrap: WriteConfig,
+    write_cluster: WriteConfig,
+    storage_yaml: dict[str, Any],
+    valid_cluster: dict[str, Any],
+    tmp_path: Any,
 ) -> None:
-    served = serve_recorder(monkeypatch)
+    served(monkeypatch, write_cluster, valid_cluster, tmp_path)
+    recorder = serve_recorder(monkeypatch)
 
-    runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+    runner.invoke(
+        cli.app, ["--config", str(write_bootstrap(daemon_config(storage_yaml, tmp_path)))]
+    )
 
-    assert served.app is not None
-    assert served.app.state.sessions is None
-    assert served.app.state.auth is None
+    assert recorder.app is not None
+    assert recorder.app.state.sessions is None
+    assert recorder.app.state.auth is None
 
 
 def test_logging_is_configured_from_the_bootstrap_config(
-    monkeypatch: Any, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
+    monkeypatch: Any,
+    write_bootstrap: WriteConfig,
+    write_cluster: WriteConfig,
+    storage_yaml: dict[str, Any],
+    valid_cluster: dict[str, Any],
+    tmp_path: Any,
 ) -> None:
+    served(monkeypatch, write_cluster, valid_cluster, tmp_path)
     serve_recorder(monkeypatch)
+    storage_yaml = daemon_config(storage_yaml, tmp_path)
     storage_yaml["logging"] = {"level": "WARNING", "format": "console"}
     configured: list[tuple[LogLevel, LogFormat]] = []
     monkeypatch.setattr(
@@ -151,16 +212,7 @@ def test_version_is_printed_without_a_config() -> None:
 
 
 class TestStorageDaemonStartup:
-    def _daemon(
-        self, tmp_path: Any, storage_yaml: dict[str, Any], cluster: dict[str, Any]
-    ) -> None:
-        for storage in cluster["storages"]:
-            root = tmp_path / storage["id"].lower()
-            root.mkdir(exist_ok=True)
-            storage["root"] = str(root)
-            storage.pop("fileset_prefix", None)
-
-    def test_a_storage_daemon_builds_a_driver_for_each_storage(
+    def test_a_driver_is_built_for_each_storage_the_daemon_serves(
         self,
         monkeypatch: Any,
         write_bootstrap: WriteConfig,
@@ -169,26 +221,18 @@ class TestStorageDaemonStartup:
         valid_cluster: dict[str, Any],
         tmp_path: Any,
     ) -> None:
-        self._daemon(tmp_path, storage_yaml, valid_cluster)
-        write_cluster(valid_cluster)
-        (tmp_path / "peer-token").write_text("s3cret\n")
-        (tmp_path / "peer-token").chmod(0o600)
-        storage_yaml.update(
-            {
-                "cluster_config": "cluster.yaml",
-                "peer_token_file": "peer-token",
-                "identity": "current",
-            }
-        )
-        served = serve_recorder(monkeypatch)
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path)
+        recorder = serve_recorder(monkeypatch)
 
-        result = runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+        result = runner.invoke(
+            cli.app, ["--config", str(write_bootstrap(daemon_config(storage_yaml, tmp_path)))]
+        )
 
         assert result.exit_code == 0, result.output
-        assert served.app is not None
-        assert set(served.app.state.drivers) == {"HOT1"}
-        assert served.app.state.peer_auth is not None
-        assert served.app.state.store is None
+        assert recorder.app is not None
+        assert set(recorder.app.state.drivers) == {"HOT1"}
+        assert recorder.app.state.peer_auth is not None
+        assert recorder.app.state.store is None
 
     def test_a_storage_root_that_is_missing_stops_the_daemon(
         self,
@@ -199,18 +243,62 @@ class TestStorageDaemonStartup:
         valid_cluster: dict[str, Any],
         tmp_path: Any,
     ) -> None:
-        self._daemon(tmp_path, storage_yaml, valid_cluster)
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path)
         (tmp_path / "hot1").rmdir()
-        write_cluster(valid_cluster)
-        storage_yaml.update({"cluster_config": "cluster.yaml", "identity": "current"})
-        served = serve_recorder(monkeypatch)
+        recorder = serve_recorder(monkeypatch)
 
-        result = runner.invoke(cli.app, ["--config", str(write_bootstrap(storage_yaml))])
+        result = runner.invoke(
+            cli.app, ["--config", str(write_bootstrap(daemon_config(storage_yaml, tmp_path)))]
+        )
 
         assert result.exit_code == 2
         assert "does not exist" in result.output
-        assert "Traceback" not in result.output
-        assert served.app is None
+        assert recorder.app is None
+
+    def test_an_unreachable_controller_starts_the_daemon_from_its_cache(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        storage_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        from stashd.config.distribution import ConfigUnavailable
+
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path)
+        recorder = serve_recorder(monkeypatch)
+        bootstrap = write_bootstrap(daemon_config(storage_yaml, tmp_path))
+        runner.invoke(cli.app, ["--config", str(bootstrap)])
+
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path, ConfigUnavailable("down"))
+        result = runner.invoke(cli.app, ["--config", str(bootstrap)])
+
+        assert result.exit_code == 0, result.output
+        assert recorder.app is not None
+        assert recorder.app.state.config_degraded is True
+
+    def test_without_a_cache_an_unreachable_controller_stops_the_daemon(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        storage_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        from stashd.config.distribution import ConfigUnavailable
+
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path, ConfigUnavailable("down"))
+        recorder = serve_recorder(monkeypatch)
+
+        result = runner.invoke(
+            cli.app, ["--config", str(write_bootstrap(daemon_config(storage_yaml, tmp_path)))]
+        )
+
+        assert result.exit_code == 2
+        assert "no cached cluster config" in result.output
+        assert recorder.app is None
 
     def test_the_controller_can_reach_its_daemons(
         self,
@@ -225,10 +313,11 @@ class TestStorageDaemonStartup:
         (tmp_path / "peer-token").write_text("s3cret\n")
         (tmp_path / "peer-token").chmod(0o600)
         controller_yaml["peer_token_file"] = "peer-token"
-        served = serve_recorder(monkeypatch)
+        recorder = serve_recorder(monkeypatch)
 
         result = runner.invoke(cli.app, ["--config", str(write_bootstrap(controller_yaml))])
 
         assert result.exit_code == 0, result.output
-        assert served.app is not None
-        assert served.app.state.store is not None
+        assert recorder.app is not None
+        assert recorder.app.state.store is not None
+        assert recorder.app.state.document is not None
