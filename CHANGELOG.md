@@ -47,6 +47,13 @@
   failure class, and cancellation that kills the whole process group and leaves the
   partial data.
 
+- The daemon's execution API: `probe` measures a path as the user, `prepare` makes a
+  destination and is idempotent, and `tasks` starts, reports and aborts a
+  transfer. Every path is resolved on the daemon before anything is queued.
+- `POST /internal/v1/events` on the controller applies what a daemon reports, ordered by
+  sequence number: a repeated or late event is acknowledged and ignored, and no transition
+  moves a transfer backwards.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

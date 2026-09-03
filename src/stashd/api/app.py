@@ -16,7 +16,9 @@ from stashd.api.deps import peer, principal
 from stashd.api.errors import install_error_handlers
 from stashd.api.health import health_router
 from stashd.api.internal import config as internal_config
+from stashd.api.internal import events as internal_events
 from stashd.api.internal import filesets as internal_filesets
+from stashd.api.internal import tasks as internal_tasks
 from stashd.api.middleware import RequestContextMiddleware
 from stashd.api.public import allocations, filesets, topology, transfers
 from stashd.auth.owners import OwnerLookup, SystemOwnerLookup
@@ -31,6 +33,7 @@ from stashd.config.reload import reload_document
 from stashd.domain.clock import Clock, SystemClock
 from stashd.drivers.base import StorageDriver
 from stashd.schemas.errors import ErrorEnvelope
+from stashd.tasks.runner import TaskRunner
 
 logger = structlog.get_logger()
 
@@ -71,6 +74,8 @@ def internal_router() -> APIRouter:
     )
     router.include_router(internal_filesets.router)
     router.include_router(internal_config.router)
+    router.include_router(internal_tasks.router)
+    router.include_router(internal_events.router)
     return router
 
 
@@ -142,6 +147,7 @@ def create_app(
     sessions: async_sessionmaker[AsyncSession] | None = None,
     peer_auth: TokenAuthProvider | None = None,
     drivers: dict[str, StorageDriver] | None = None,
+    runner: TaskRunner | None = None,
     store: FilesetStore | None = None,
     document: ConfigDocument | None = None,
     degraded: bool = False,
@@ -158,6 +164,7 @@ def create_app(
     app.state.sessions = sessions
     app.state.peer_auth = peer_auth
     app.state.drivers = drivers
+    app.state.runner = runner
     app.state.store = store
     app.state.document = document
     app.state.config_degraded = degraded

@@ -68,6 +68,7 @@ def _driver_for(storage: Storage, identity: Identity) -> StorageDriver:
             fileset_prefix=storage.fileset_prefix,
             identity=identity,
             fileset_mode=storage.fileset_mode,
+            root=storage.root,
         )
     raise ConfigError(  # pragma: no cover - the enum has one member today
         Path("cluster.yaml"), [f"storage {storage.id!r}: no driver named {storage.driver!r}"]
