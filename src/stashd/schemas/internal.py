@@ -1,5 +1,10 @@
 """The controller-to-daemon wire. Peer token only; never a MUNGE credential."""
 
+from datetime import datetime
+from typing import Literal
+
+from pydantic import Field
+
 from stashd.schemas.base import Wire
 
 
@@ -37,3 +42,82 @@ class ClusterConfigDocument(Wire):
     revision: int
     content_hash: str
     text: str
+
+
+class Probe(Wire):
+    """Ask a source daemon what is at a path, as the user."""
+
+    storage_id: str
+    path: str
+    owner: Owner
+
+
+class ProbeResult(Wire):
+    path: str
+    exists: bool
+    is_dir: bool
+    readable: bool
+    bytes_total: int
+    file_count: int
+    complete: bool
+
+
+class Prepare(Wire):
+    """Ask a target daemon to make the destination ready. Idempotent."""
+
+    storage_id: str
+    name: str
+    owner: Owner
+    allocation_bytes: int
+
+
+class Endpoint(Wire):
+    path: str
+    host: str | None = None
+    user: str | None = None
+
+
+class StartTask(Wire):
+    """Ask the source daemon to move the data."""
+
+    transfer_id: int
+    storage_id: str
+    source_path: str
+    owner: Owner
+    target: Endpoint
+    bwlimit_bytes_per_s: int | None = None
+    delete: bool = False
+
+
+class TaskState(Wire):
+    task_id: str
+    transfer_id: int
+    state: str
+    bytes_done: int = 0
+    files_done: int = 0
+    failure: str | None = None
+    message: str = ""
+
+
+class TransferEvent(Wire):
+    """What a daemon reports about a transfer it is running.
+
+    ``sequence`` is what orders them: events arrive duplicated and out of order, and a
+    transfer must never move backwards because one was late.
+    """
+
+    transfer_id: int
+    sequence: int = Field(ge=1)
+    kind: Literal["started", "progress", "finished", "failed"]
+    daemon_id: str
+    at: datetime
+    bytes_done: int = 0
+    files_done: int = 0
+    failure: str | None = None
+    message: str = ""
+
+
+class EventAccepted(Wire):
+    transfer_id: int
+    applied: bool
+    state: str
