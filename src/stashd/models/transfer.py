@@ -28,6 +28,8 @@ class Transfer(Base):
     executing_daemon_id: Mapped[Name | None] = mapped_column(default=None)
     bwlimit_bytes_per_s: Mapped[Bytes | None] = mapped_column(default=None)
     attempt: Mapped[Count] = mapped_column(default=1)
+    # Daemon events arrive duplicated and out of order; this is what orders them.
+    last_sequence: Mapped[Count] = mapped_column(default=0)
     error_code: Mapped[Name | None] = mapped_column(default=None)
     error_detail: Mapped[str | None] = mapped_column(default=None)
     submitted_at: Mapped[datetime]
