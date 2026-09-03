@@ -280,14 +280,12 @@ class TestRelease:
 
         assert (await self.released(api)).status_code == 404
 
-    async def test_warm_is_not_accepted_yet(self, api: httpx2.AsyncClient) -> None:
+    async def test_a_kind_the_server_does_not_know_is_refused(
+        self, api: httpx2.AsyncClient
+    ) -> None:
         response = await api.post(
             "/transfers",
-            json={
-                "kind": "warm",
-                "source": {"storage": "HOT1", "path": "/x"},
-                "target": {"storage": "LOC2HOT", "fileset": "mydir"},
-            },
+            json={"kind": "teleport", "target": {"storage": "LOC2HOT", "fileset": "mydir"}},
         )
 
         assert response.status_code == 400
