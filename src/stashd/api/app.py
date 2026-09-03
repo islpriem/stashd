@@ -18,6 +18,7 @@ from stashd.api.health import health_router
 from stashd.api.internal import config as internal_config
 from stashd.api.internal import events as internal_events
 from stashd.api.internal import filesets as internal_filesets
+from stashd.api.internal import register as internal_register
 from stashd.api.internal import tasks as internal_tasks
 from stashd.api.middleware import RequestContextMiddleware
 from stashd.api.public import allocations, filesets, topology, transfers
@@ -77,6 +78,7 @@ def internal_router() -> APIRouter:
     router.include_router(internal_config.router)
     router.include_router(internal_tasks.router)
     router.include_router(internal_events.router)
+    router.include_router(internal_register.router)
     return router
 
 
@@ -112,7 +114,21 @@ async def refresh_cluster_config(app: FastAPI) -> bool:
         return False
     changed = await asyncio.to_thread(refresh_config, plan.source, plan.cache, plan.held)
     apply_document(app, plan.held.document, degraded=plan.held.degraded)
+    await announce(app)
     return changed
+
+
+async def announce(app: FastAPI) -> bool:
+    """Tell the controller what this daemon is on; it answers whether that is current."""
+    registrar = app.state.registrar
+    announcement = app.state.announcement
+    document: ConfigDocument | None = app.state.document
+    if registrar is None or announcement is None or document is None:
+        return False
+    stale = await asyncio.to_thread(registrar.announce, announcement, document.revision)
+    if stale:
+        logger.info("config.stale", revision=document.revision)
+    return bool(stale)
 
 
 async def _refresh_loop(app: FastAPI, plan: RefreshPlan) -> None:  # pragma: no cover - a loop
@@ -126,6 +142,8 @@ async def background(app: FastAPI) -> AsyncIterator[None]:
     """Keep the cluster config current: refresh on a daemon, SIGHUP on the controller."""
     tasks: list[asyncio.Task[None]] = []
     plan: RefreshPlan | None = app.state.refresh
+    if app.state.registrar is not None:
+        await announce(app)
     if plan is not None:
         tasks.append(asyncio.create_task(_refresh_loop(app, plan)))
     if app.state.reload_from is not None:  # pragma: no cover - needs a real signal
@@ -155,6 +173,8 @@ def create_app(
     degraded: bool = False,
     refresh: RefreshPlan | None = None,
     reload_from: Path | None = None,
+    registrar: object | None = None,
+    announcement: object | None = None,
     owners: OwnerLookup | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
@@ -173,6 +193,8 @@ def create_app(
     app.state.config_degraded = degraded
     app.state.refresh = refresh
     app.state.reload_from = reload_from
+    app.state.registrar = registrar
+    app.state.announcement = announcement
     app.state.owners = owners or SystemOwnerLookup()
     app.state.clock = clock or SystemClock()
     app.add_middleware(RequestContextMiddleware)

@@ -135,3 +135,44 @@ class TestReload:
         self, storage_bootstrap: BootstrapConfig
     ) -> None:
         assert reload_cluster_config(create_app(storage_bootstrap)) is False
+
+
+class TestAnnouncing:
+    """A daemon says what it is on; the controller says whether that is still current."""
+
+    class FakeRegistrar:
+        def __init__(self, stale: bool = False) -> None:
+            self.stale = stale
+            self.calls: list[tuple[object, int]] = []
+
+        def announce(self, announcement: object, config_revision: int) -> bool:
+            self.calls.append((announcement, config_revision))
+            return self.stale
+
+    async def test_the_controller_can_say_the_daemon_is_behind(
+        self,
+        storage_bootstrap: BootstrapConfig,
+        write_cluster: WriteConfig,
+        valid_cluster: dict[str, Any],
+    ) -> None:
+        from stashd.api.app import announce
+
+        document = load_cluster_document(write_cluster(valid_cluster))
+        registrar = self.FakeRegistrar(stale=True)
+        app = create_app(
+            storage_bootstrap,
+            document.config,
+            document=document,
+            registrar=registrar,
+            announcement="hot1",
+        )
+
+        assert await announce(app) is True
+        assert registrar.calls[0][1] == 42
+
+    async def test_a_daemon_with_nothing_to_announce_to_says_nothing(
+        self, storage_bootstrap: BootstrapConfig
+    ) -> None:
+        from stashd.api.app import announce
+
+        assert await announce(create_app(storage_bootstrap)) is False

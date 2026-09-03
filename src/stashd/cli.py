@@ -18,6 +18,7 @@ from stashd.auth.token import TokenAuthProvider
 from stashd.clients.config import HttpConfigSource
 from stashd.clients.events import EventReporter, HttpEventReporter, NullEventReporter
 from stashd.clients.filesets import FilesetStore, HttpFilesetStore
+from stashd.clients.registration import Announcement, HttpRegistrar
 from stashd.clients.transfers import HttpTransferDispatcher, TransferDispatcher
 from stashd.config.bootstrap import (
     BootstrapConfig,
@@ -77,6 +78,8 @@ class Parts:
     dispatcher: TransferDispatcher | None = None
     refresh: RefreshPlan | None = None
     reload_from: Path | None = None
+    registrar: HttpRegistrar | None = None
+    announcement: Announcement | None = None
 
 
 def _identity(kind: IdentityKind) -> Identity:
@@ -146,6 +149,16 @@ def _daemon_parts(config: BootstrapConfig) -> Parts:
             source=source, cache=cache, held=held, interval=config.config_refresh_interval
         ),
         drivers=drivers,
+        registrar=HttpRegistrar(
+            config.controller.url, config.controller.token_file.read_text().strip()
+        )
+        if config.controller is not None
+        else None,
+        announcement=Announcement(
+            daemon_id=config.node.daemon_id,
+            storages=list(config.node.storages),
+            version=__version__,
+        ),
         runner=ThreadTaskRunner(
             drivers=drivers,
             engine=RsyncEngine(identity),
@@ -201,6 +214,8 @@ def main(
             degraded=parts.held.degraded,
             refresh=parts.refresh,
             reload_from=parts.reload_from,
+            registrar=parts.registrar,
+            announcement=parts.announcement,
         ),
         bootstrap.server,
     )
