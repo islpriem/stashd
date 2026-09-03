@@ -16,7 +16,9 @@ from stashd.auth.provider import AuthProvider
 from stashd.auth.system import SystemIdentityLookup
 from stashd.auth.token import TokenAuthProvider
 from stashd.clients.config import HttpConfigSource
+from stashd.clients.events import EventReporter, HttpEventReporter, NullEventReporter
 from stashd.clients.filesets import FilesetStore, HttpFilesetStore
+from stashd.clients.transfers import HttpTransferDispatcher, TransferDispatcher
 from stashd.config.bootstrap import (
     BootstrapConfig,
     IdentityKind,
@@ -34,11 +36,14 @@ from stashd.config.distribution import (
 from stashd.config.errors import ConfigError
 from stashd.db import create_engine, session_factory
 from stashd.drivers.base import StorageDriver
-from stashd.drivers.factory import build_drivers
+from stashd.drivers.factory import build_drivers, check_pool_size
+from stashd.engines.rsync import RsyncEngine
 from stashd.identity.base import Identity
 from stashd.identity.current import CurrentUserIdentity
 from stashd.identity.sudo import SudoIdentity
 from stashd.obs.logging import configure_logging
+from stashd.tasks.runner import TaskRunner
+from stashd.tasks.threaded import ThreadTaskRunner
 
 CONFIG_ERROR = 2
 CACHED_CONFIG = "cluster.yaml"
@@ -67,7 +72,9 @@ class Parts:
     auth: AuthProvider | None = None
     peer_auth: TokenAuthProvider | None = None
     drivers: dict[str, StorageDriver] | None = None
+    runner: TaskRunner | None = None
     store: FilesetStore | None = None
+    dispatcher: TransferDispatcher | None = None
     refresh: RefreshPlan | None = None
     reload_from: Path | None = None
 
@@ -91,6 +98,16 @@ def _config_source(config: BootstrapConfig) -> ConfigSource:
     return HttpConfigSource(config.controller.url, token)
 
 
+def _event_reporter(config: BootstrapConfig) -> EventReporter:
+    if config.controller is None:  # pragma: no cover - the config model requires it
+        return NullEventReporter()
+    return HttpEventReporter(
+        config.controller.url,
+        config.controller.token_file.read_text().strip(),
+        config.node.daemon_id,
+    )
+
+
 def _controller_parts(config: BootstrapConfig, document: ConfigDocument) -> Parts:
     parts = Parts(
         held=HeldConfig(document=document, degraded=False),
@@ -101,9 +118,10 @@ def _controller_parts(config: BootstrapConfig, document: ConfigDocument) -> Part
         parts.sessions = session_factory(create_engine(config.database.url))
     parts.auth = MungeAuthProvider(document.config.auth.munge_socket, SystemIdentityLookup())
     if config.peer_token_file is not None:
-        parts.store = HttpFilesetStore(
-            document.config, config.peer_token_file.read_text().strip(), httpx2.AsyncClient()
-        )
+        token = config.peer_token_file.read_text().strip()
+        client = httpx2.AsyncClient()
+        parts.store = HttpFilesetStore(document.config, token, client)
+        parts.dispatcher = HttpTransferDispatcher(document.config, token, client)
     return parts
 
 
@@ -111,18 +129,28 @@ def _daemon_parts(config: BootstrapConfig) -> Parts:
     cache = ConfigCache(config.cache_dir / CACHED_CONFIG)
     source = _config_source(config)
     held = obtain_config(source, cache)
+    cluster = held.document.config
+    check_pool_size(cluster, config.worker_pool_size)
+    identity = _identity(config.identity)
+    drivers = build_drivers(
+        cluster,
+        config.node.storages,
+        identity,
+        daemon_id=config.node.daemon_id,
+        config_path=cache.path,
+    )
     return Parts(
         held=held,
         peer_auth=_peer_token(config),
         refresh=RefreshPlan(
             source=source, cache=cache, held=held, interval=config.config_refresh_interval
         ),
-        drivers=build_drivers(
-            held.document.config,
-            config.node.storages,
-            _identity(config.identity),
-            daemon_id=config.node.daemon_id,
-            config_path=cache.path,
+        drivers=drivers,
+        runner=ThreadTaskRunner(
+            drivers=drivers,
+            engine=RsyncEngine(identity),
+            reporter=_event_reporter(config),
+            pool_size=config.worker_pool_size,
         ),
     )
 
@@ -166,7 +194,9 @@ def main(
             sessions=parts.sessions,
             peer_auth=parts.peer_auth,
             drivers=parts.drivers,
+            runner=parts.runner,
             store=parts.store,
+            dispatcher=parts.dispatcher,
             document=parts.held.document,
             degraded=parts.held.degraded,
             refresh=parts.refresh,

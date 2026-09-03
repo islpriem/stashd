@@ -21,6 +21,19 @@ def capabilities_for(driver: Driver) -> StorageCapabilities:
     return _CAPABILITIES[driver]
 
 
+def check_pool_size(cluster: ClusterConfig, pool_size: int) -> None:
+    """A daemon that cannot run what the cluster may dispatch to it is misconfigured."""
+    needed = cluster.limits.concurrency.per_storage
+    if pool_size < needed:
+        raise ConfigError(
+            Path("<bootstrap>"),
+            [
+                f"worker_pool_size {pool_size} is below concurrency.per_storage {needed}: "
+                f"this daemon could be given more transfers than it can run"
+            ],
+        )
+
+
 def build_drivers(
     cluster: ClusterConfig,
     storage_ids: Sequence[str],

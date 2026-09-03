@@ -25,6 +25,7 @@ from stashd.auth.owners import OwnerLookup, SystemOwnerLookup
 from stashd.auth.provider import AuthProvider
 from stashd.auth.token import TokenAuthProvider
 from stashd.clients.filesets import FilesetStore
+from stashd.clients.transfers import TransferDispatcher
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig, ConfigDocument
 from stashd.config.distribution import RefreshPlan, refresh_config
@@ -149,6 +150,7 @@ def create_app(
     drivers: dict[str, StorageDriver] | None = None,
     runner: TaskRunner | None = None,
     store: FilesetStore | None = None,
+    dispatcher: TransferDispatcher | None = None,
     document: ConfigDocument | None = None,
     degraded: bool = False,
     refresh: RefreshPlan | None = None,
@@ -166,6 +168,7 @@ def create_app(
     app.state.drivers = drivers
     app.state.runner = runner
     app.state.store = store
+    app.state.dispatcher = dispatcher
     app.state.document = document
     app.state.config_degraded = degraded
     app.state.refresh = refresh

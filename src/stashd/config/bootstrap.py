@@ -118,6 +118,8 @@ class BootstrapConfig(Section):
     # The bearer token internal requests carry.
     peer_token_file: ConfigRelativePath | None = None
     identity: IdentityKind = IdentityKind.SUDO
+    # How many transfers this daemon runs at once.
+    worker_pool_size: int = Field(default=4, gt=0)
 
     @property
     def is_controller(self) -> bool:

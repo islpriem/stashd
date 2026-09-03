@@ -10,6 +10,7 @@ from stashd.auth.owners import OwnerLookup, owner_for
 from stashd.auth.provider import AuthProvider, Unauthenticated
 from stashd.auth.token import TokenAuthProvider
 from stashd.clients.filesets import FilesetStore
+from stashd.clients.transfers import TransferDispatcher
 from stashd.config.cluster import ClusterConfig
 from stashd.domain.clock import Clock
 from stashd.domain.identity import Principal, is_admin
@@ -72,6 +73,13 @@ def fileset_store(request: Request) -> FilesetStore:
     if store is None:  # pragma: no cover - wired at startup
         raise RuntimeError("the controller has no way to reach its daemons")
     return store
+
+
+def transfer_dispatcher(request: Request) -> TransferDispatcher:
+    dispatcher: TransferDispatcher | None = request.app.state.dispatcher
+    if dispatcher is None:  # pragma: no cover - wired at startup
+        raise RuntimeError("the controller has no way to dispatch transfers")
+    return dispatcher
 
 
 def owner_lookup(request: Request) -> OwnerLookup:

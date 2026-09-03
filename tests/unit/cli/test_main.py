@@ -66,7 +66,12 @@ def served(
 def daemon_config(storage_yaml: dict[str, Any], tmp_path: Any) -> dict[str, Any]:
     (tmp_path / "peer-token").write_text("s3cret\n")
     (tmp_path / "peer-token").chmod(0o600)
-    return {**storage_yaml, "peer_token_file": "peer-token", "identity": "current"}
+    return {
+        **storage_yaml,
+        "peer_token_file": "peer-token",
+        "identity": "current",
+        "worker_pool_size": 8,
+    }
 
 
 def test_controller_starts_from_its_config(
@@ -277,6 +282,44 @@ class TestStorageDaemonStartup:
         assert result.exit_code == 0, result.output
         assert recorder.app is not None
         assert recorder.app.state.config_degraded is True
+
+    def test_a_daemon_smaller_than_the_cluster_may_dispatch_refuses_to_start(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        storage_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path)
+        recorder = serve_recorder(monkeypatch)
+        undersized = {**daemon_config(storage_yaml, tmp_path), "worker_pool_size": 1}
+
+        result = runner.invoke(cli.app, ["--config", str(write_bootstrap(undersized))])
+
+        assert result.exit_code == 2
+        assert "concurrency.per_storage" in result.output
+        assert recorder.app is None
+
+    def test_the_daemon_runs_transfers_beside_its_requests(
+        self,
+        monkeypatch: Any,
+        write_bootstrap: WriteConfig,
+        write_cluster: WriteConfig,
+        storage_yaml: dict[str, Any],
+        valid_cluster: dict[str, Any],
+        tmp_path: Any,
+    ) -> None:
+        served(monkeypatch, write_cluster, valid_cluster, tmp_path)
+        recorder = serve_recorder(monkeypatch)
+
+        runner.invoke(
+            cli.app, ["--config", str(write_bootstrap(daemon_config(storage_yaml, tmp_path)))]
+        )
+
+        assert recorder.app is not None
+        assert recorder.app.state.runner is not None
 
     def test_without_a_cache_an_unreachable_controller_stops_the_daemon(
         self,
