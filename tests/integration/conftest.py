@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from stashd.api.app import create_app
 from stashd.auth.fake import FakeAuthProvider
+from stashd.auth.token import TokenAuthProvider
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig
 from stashd.db import create_engine, session_factory
@@ -123,6 +124,34 @@ class FakeOwnerLookup:
 @pytest.fixture
 def fake_driver() -> FakeDriver:
     return FakeDriver(storage_id="LOC2HOT", fileset_prefix="/fake/cache")
+
+
+PEER_TOKEN = "peer-s3cret"
+
+
+@pytest_asyncio.fixture
+async def peer(
+    sessions: async_sessionmaker[AsyncSession],
+    controller_bootstrap: BootstrapConfig,
+    cluster_config: ClusterConfig,
+    fake_driver: FakeDriver,
+) -> AsyncIterator[httpx2.AsyncClient]:
+    """The controller as a daemon sees it: peer token, internal API."""
+    app = create_app(
+        controller_bootstrap,
+        cluster_config,
+        auth=FakeAuthProvider(CREDENTIALS),
+        sessions=sessions,
+        store=DirectFilesetStore(fake_driver),
+        owners=FakeOwnerLookup(),
+        clock=FixedClock(datetime(2026, 9, 1, 12, 0, tzinfo=UTC)),
+        peer_auth=TokenAuthProvider(PEER_TOKEN),
+    )
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://controller/internal/v1"
+    ) as client:
+        client.headers["Authorization"] = f"Bearer {PEER_TOKEN}"
+        yield client
 
 
 @pytest_asyncio.fixture
