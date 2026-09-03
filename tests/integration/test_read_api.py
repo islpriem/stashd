@@ -105,6 +105,22 @@ class TestFilesets:
 
         assert {entry["name"] for entry in response.json()["filesets"]} == expected
 
+    async def test_a_live_fileset_comes_before_a_released_namesake(
+        self, api: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        """A reference names the live fileset; released ones are history behind it."""
+        await given(
+            session,
+            cached("results", state=FilesetState.RELEASED, released_at=T0),
+            cached("results"),
+            cached("results", state=FilesetState.RELEASED, released_at=T0),
+        )
+
+        listed = (await api.get("/filesets", params={"name": "results"})).json()["filesets"]
+
+        assert [entry["state"] for entry in listed] == ["READY", "RELEASED", "RELEASED"]
+        assert listed[1]["id"] > listed[2]["id"], "newest history first"
+
     async def test_an_output_fileset_has_no_source(
         self, api: httpx2.AsyncClient, session: AsyncSession
     ) -> None:

@@ -31,6 +31,8 @@
 - `/storages` says per storage whether an allocation is enforced by the filesystem,
   and `/transfers` can be filtered to one fileset: both are what `stash quota`
   and `stash fileset show` need.
+- `/filesets` returns live filesets before released namesakes, so a client holding
+  `STORAGE:name` resolves it to the fileset that exists.
 
 ### Changed
 

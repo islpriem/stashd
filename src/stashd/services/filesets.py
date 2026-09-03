@@ -33,7 +33,15 @@ async def list_filesets(
     kind: FilesetKind | None = None,
     state: FilesetState | None = None,
 ) -> Sequence[Fileset]:
-    query = sa.select(Fileset).order_by(Fileset.storage_id, Fileset.owner_user, Fileset.name)
+    # A reference names the live fileset, so live rows come first and history follows,
+    # newest first. Clients rely on this order to resolve STORAGE:name.
+    query = sa.select(Fileset).order_by(
+        Fileset.storage_id,
+        Fileset.owner_user,
+        Fileset.name,
+        (Fileset.state == FilesetState.RELEASED),
+        Fileset.id.desc(),
+    )
     if storage is not None:
         query = query.where(Fileset.storage_id == storage)
     if user is not None:
