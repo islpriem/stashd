@@ -92,10 +92,10 @@ class HttpFilesetStore:
             ) from error
         if response.is_success:
             return dict(response.json()) if response.content else {}
-        raise _failure(response, daemon.id, storage_id)
+        raise failure_from(response, daemon.id, storage_id)
 
 
-def _failure(response: httpx2.Response, daemon_id: str, storage_id: str) -> StashError:
+def failure_from(response: httpx2.Response, daemon_id: str, storage_id: str) -> StashError:
     try:
         error = dict(response.json()["error"])
     except (ValueError, KeyError, TypeError):
