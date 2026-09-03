@@ -7,6 +7,7 @@ created once per session and migrated with Alembic; every test starts from empty
 import os
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx2
 import pytest
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from stashd.api.app import create_app
 from stashd.auth.fake import FakeAuthProvider
 from stashd.auth.token import TokenAuthProvider
+from stashd.clients.transfers import ProbeResult, StartedTask
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig
 from stashd.db import create_engine, session_factory
@@ -26,6 +28,7 @@ from stashd.domain.errors import NotFound
 from stashd.domain.identity import Principal
 from stashd.domain.storage import FilesetLocation, Owner
 from stashd.drivers.fake import FakeDriver
+from stashd.engines.base import TransferEndpoint
 from stashd.models import Base
 
 USER = Principal(uid=1000, gid=1000, username="mmustermann", groups=("users",), gids=(1000,))
@@ -121,6 +124,61 @@ class FakeOwnerLookup:
         return Owner(user=user, uid=uid, gid=gid)
 
 
+class FakeDispatcher:
+    """Stands in for the daemons: what was probed, prepared and started."""
+
+    def __init__(self) -> None:
+        self.exists = True
+        self.readable = True
+        self.bytes_total = 20 * 1024**3
+        self.file_count = 12043
+        self.prepared: list[tuple[str, str]] = []
+        self.started: list[dict[str, Any]] = []
+
+    async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult:
+        return ProbeResult(
+            exists=self.exists,
+            is_dir=True,
+            readable=self.readable,
+            bytes_total=self.bytes_total,
+            file_count=self.file_count,
+            complete=True,
+        )
+
+    async def prepare(
+        self, storage_id: str, owner: Owner, name: str, allocation_bytes: int
+    ) -> TransferEndpoint:
+        self.prepared.append((storage_id, name))
+        return TransferEndpoint(path=f"/fake/cache/{owner.user}/{name}")
+
+    async def start(
+        self,
+        storage_id: str,
+        *,
+        transfer_id: int,
+        source_path: str,
+        owner: Owner,
+        target: TransferEndpoint,
+        bwlimit_bytes_per_s: int | None,
+        delete: bool,
+    ) -> StartedTask:
+        self.started.append(
+            {
+                "storage_id": storage_id,
+                "transfer_id": transfer_id,
+                "source_path": source_path,
+                "target": target.path,
+                "delete": delete,
+            }
+        )
+        return StartedTask(task_id=f"task-{transfer_id}", daemon_id="hot1")
+
+
+@pytest.fixture
+def dispatcher() -> FakeDispatcher:
+    return FakeDispatcher()
+
+
 @pytest.fixture
 def fake_driver() -> FakeDriver:
     return FakeDriver(storage_id="LOC2HOT", fileset_prefix="/fake/cache")
@@ -160,6 +218,7 @@ async def api(
     controller_bootstrap: BootstrapConfig,
     cluster_config: ClusterConfig,
     fake_driver: FakeDriver,
+    dispatcher: FakeDispatcher,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     """The controller with a real database and a fake credential per user."""
     app = create_app(
@@ -168,6 +227,7 @@ async def api(
         auth=FakeAuthProvider(CREDENTIALS),
         sessions=sessions,
         store=DirectFilesetStore(fake_driver),
+        dispatcher=dispatcher,
         owners=FakeOwnerLookup(),
         clock=FixedClock(datetime(2026, 9, 1, 12, 0, tzinfo=UTC)),
     )

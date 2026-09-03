@@ -2,14 +2,30 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 
-from stashd.api.deps import Caller, Cluster, Session, Store, Ticking, caller_is_admin
+from stashd.api.deps import (
+    Caller,
+    Cluster,
+    Session,
+    Store,
+    Ticking,
+    caller_is_admin,
+    subject_owner,
+    transfer_dispatcher,
+)
 from stashd.domain.transfers import TransferKind, TransferState
 from stashd.models import Transfer as TransferRow
-from stashd.schemas.transfers import SubmitRelease, Transfer, Transfers
+from stashd.schemas.transfers import (
+    Preflight,
+    Submit,
+    SubmitWarm,
+    Transfer,
+    Transfers,
+)
 from stashd.services import transfers as service
 from stashd.services import transfers_release as release
+from stashd.services import warm
 
 router = APIRouter()
 
@@ -69,14 +85,17 @@ async def get_transfer(session: Session, transfer_id: int) -> Transfer:
 
 @router.post("/transfers", status_code=status.HTTP_201_CREATED)
 async def submit_transfer(
+    request: Request,
     caller: Caller,
     session: Session,
     cluster: Cluster,
     store: Store,
     clock: Ticking,
-    body: SubmitRelease,
-) -> Transfer:
-    """Submit a transfer. Only `release` exists so far; it runs synchronously."""
+    body: Submit,
+) -> Transfer | Preflight:
+    """Submit a warm or a release. A release runs synchronously."""
+    if isinstance(body, SubmitWarm):
+        return await _warm(request, caller, session, cluster, clock, body)
     released = await release.release_fileset(
         session,
         store=store,
@@ -88,3 +107,56 @@ async def submit_transfer(
         name=body.target.fileset,
     )
     return to_wire(released)
+
+
+async def _warm(
+    request: Request,
+    caller: Caller,
+    session: Session,
+    cluster: Cluster,
+    clock: Ticking,
+    body: SubmitWarm,
+) -> Transfer | Preflight:
+    owner = subject_owner(request, caller, body.user)
+    dispatcher = transfer_dispatcher(request)
+    plan = await warm.preflight(
+        session,
+        cluster=cluster,
+        dispatcher=dispatcher,
+        owner=owner,
+        source_storage_id=body.source.storage,
+        source_path=body.source.path,
+        target_storage_id=body.target.storage,
+        name=body.target.fileset,
+        size_bytes=body.size_bytes,
+        refresh=body.refresh,
+    )
+    start, duration = warm.eta(cluster, plan)
+    if body.dry_run:
+        return Preflight(
+            kind=TransferKind.WARM,
+            source=plan.source_reference,
+            target=plan.target_reference,
+            path=plan.path,
+            route=str(plan.route),
+            bytes_total=plan.bytes_total,
+            file_count=plan.file_count,
+            allocation_bytes=plan.allocation_bytes,
+            refresh=plan.refresh,
+            estimated_start_seconds=start,
+            estimated_duration_seconds=duration,
+        )
+    submitted = await warm.submit_warm(
+        session,
+        cluster=cluster,
+        dispatcher=dispatcher,
+        clock=clock,
+        actor=caller,
+        owner=owner,
+        plan=plan,
+        source_storage_id=body.source.storage,
+        source_path=body.source.path,
+        target_storage_id=body.target.storage,
+        name=body.target.fileset,
+    )
+    return to_wire(submitted)
