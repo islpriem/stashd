@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 from itertools import count
 
 from stashd.drivers.base import StorageDriver
-from stashd.engines.base import TransferEngine, TransferOptions
+from stashd.engines.base import TransferEngine
+from stashd.tasks.execute import execute_transfer
 from stashd.tasks.runner import TaskProgress, TransferTask
 
 
@@ -21,24 +22,7 @@ class InlineTaskRunner:
 
     def submit(self, task: TransferTask) -> str:
         task_id = f"inline-{next(self._ids)}"
-        driver = self.drivers[task.storage_id]
-        source = driver.endpoint(driver.resolve(task.source_path).absolute)
-        result = self.engine.run(
-            source,
-            task.target,
-            TransferOptions(bwlimit_bytes_per_s=task.bwlimit_bytes_per_s, delete=task.delete),
-            owner=task.owner,
-            handle=task_id,
-        )
-        self.results[task_id] = TaskProgress(
-            task_id=task_id,
-            transfer_id=task.transfer_id,
-            state="SUCCEEDED" if result.ok else "FAILED",
-            bytes_done=result.bytes_transferred,
-            files_done=result.files_transferred,
-            failure=result.failure,
-            message=result.message,
-        )
+        self.results[task_id] = execute_transfer(self.drivers, self.engine, task, task_id)
         return task_id
 
     def progress(self, task_id: str) -> TaskProgress | None:
