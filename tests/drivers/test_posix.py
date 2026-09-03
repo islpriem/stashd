@@ -114,6 +114,50 @@ class TestPosixEdgeCases:
         assert Path(keep.path).is_dir()
         assert not Path(drop.path).exists()
 
+    def test_a_symlink_out_of_the_storage_is_refused(
+        self, driver: PosixDriver, tmp_path: Path, owner: Owner
+    ) -> None:
+        """The path is resolved before it is checked, so a link cannot be followed out."""
+        (tmp_path / "escape").symlink_to("/etc")
+
+        with pytest.raises(StashError, match="outside"):
+            driver.resolve("/escape")
+
+    def test_a_probe_reports_what_is_there(
+        self, driver: PosixDriver, tmp_path: Path, owner: Owner
+    ) -> None:
+        (tmp_path / "myuser").mkdir()
+        (tmp_path / "myuser" / "one").write_bytes(b"x" * 4096)
+        (tmp_path / "myuser" / "two").write_bytes(b"y" * 4096)
+        resolved = driver.resolve("/myuser")
+
+        found = driver.stat(resolved, owner=owner)
+        measured = driver.measure(resolved, owner=owner, timeout=10)
+
+        assert (found.exists, found.is_dir, found.readable) == (True, True, True)
+        assert measured.file_count == 2
+        assert measured.bytes_total >= 8192
+        assert measured.complete
+
+    def test_a_path_that_is_not_there_is_reported_as_absent(
+        self, driver: PosixDriver, owner: Owner
+    ) -> None:
+        found = driver.stat(driver.resolve("/nothing/here"), owner=owner)
+
+        assert not found.exists
+        assert not found.readable
+
+    def test_measuring_something_that_is_not_there_is_an_error(
+        self, driver: PosixDriver, owner: Owner
+    ) -> None:
+        with pytest.raises(StashError, match="cannot measure"):
+            driver.measure(driver.resolve("/nothing/here"), owner=owner, timeout=10)
+
+    def test_the_storage_root_itself_resolves(
+        self, driver: PosixDriver, tmp_path: Path
+    ) -> None:
+        assert driver.resolve("/").absolute == str(tmp_path.resolve())
+
     def test_the_prefix_itself_can_never_be_deleted(
         self, driver: PosixDriver, owner: Owner, tmp_path: Path
     ) -> None:

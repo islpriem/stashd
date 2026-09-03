@@ -131,3 +131,28 @@ class DriverConformance:
         theirs = driver.create_fileset(other, "mydir", 1024)
 
         assert mine.path != theirs.path
+
+    def test_a_path_resolves_inside_the_storage(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        resolved = driver.resolve("/myuser/mydirectory")
+
+        assert resolved.storage_id == driver.storage_id
+        assert resolved.relative == "/myuser/mydirectory"
+        assert resolved.absolute.endswith("/myuser/mydirectory")
+
+    @pytest.mark.parametrize("path", ["/../etc", "/a/../../b", "relative", "/a//b"])
+    def test_a_path_that_could_leave_the_storage_is_refused(
+        self, driver: StorageDriver, path: str
+    ) -> None:
+        with pytest.raises(StashError):
+            driver.resolve(path)
+
+    def test_a_fileset_can_be_addressed_as_a_transfer_endpoint(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        location = driver.create_fileset(owner, "mydir", 1024)
+
+        endpoint = driver.endpoint(location.path)
+
+        assert endpoint.path == location.path

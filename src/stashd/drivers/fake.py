@@ -7,9 +7,16 @@ covers both sides of every capability branch.
 from dataclasses import dataclass, field
 
 from stashd.domain.errors import InvalidPath
-from stashd.domain.references import validate_fileset_name
-from stashd.domain.storage import FilesetLocation, Owner
+from stashd.domain.references import validate_fileset_name, validate_storage_path
+from stashd.domain.storage import (
+    FilesetLocation,
+    Owner,
+    PathStat,
+    ResolvedPath,
+    SizeReport,
+)
 from stashd.drivers.base import DriverError, StorageCapabilities
+from stashd.engines.base import TransferEndpoint
 
 DEFAULT_MODE = 0o700
 
@@ -32,12 +39,39 @@ class FakeDriver:
         storage_id: str = "LOC2HOT",
         fileset_prefix: str = "/fake/cache",
         fileset_mode: int = DEFAULT_MODE,
+        root: str | None = None,
     ) -> None:
         self.storage_id = storage_id
         self.filesets: dict[str, FakeFileset] = {}
         self.failures: dict[str, Exception] = {}
+        self.paths: dict[str, PathStat] = {}
+        self.sizes: dict[str, SizeReport] = {}
         self._prefix = fileset_prefix.rstrip("/")
+        self._root = (root or fileset_prefix).rstrip("/")
         self._mode = fileset_mode
+
+    def resolve(self, storage_relative_path: str) -> ResolvedPath:
+        relative = validate_storage_path(self.storage_id, storage_relative_path)
+        return ResolvedPath(
+            storage_id=self.storage_id,
+            relative=relative,
+            absolute=f"{self._root}{relative}".rstrip("/") or self._root,
+        )
+
+    def stat(self, path: ResolvedPath, *, owner: Owner) -> PathStat:
+        del owner
+        known = self.paths.get(path.absolute)
+        if known is None:
+            return PathStat(exists=False, is_dir=False, readable=False)
+        return known
+
+    def measure(self, path: ResolvedPath, *, owner: Owner, timeout: float) -> SizeReport:
+        del owner, timeout
+        self._maybe_fail("measure")
+        return self.sizes.get(path.absolute, SizeReport(bytes_total=0, file_count=0))
+
+    def endpoint(self, path: str) -> TransferEndpoint:
+        return TransferEndpoint(path=path)
 
     def fileset_path(self, owner: Owner, name: str) -> str:
         return f"{self._prefix}/{owner.user}/{validate_fileset_name(name)}"
@@ -67,6 +101,13 @@ class FakeDriver:
         if location.path != expected:
             raise InvalidPath(f"{location.path} is not a fileset path", path=location.path)
         self.filesets.pop(location.path, None)
+
+    def with_source(self, path: str, *, bytes_total: int, file_count: int) -> str:
+        """Pretend a readable directory of that size is there, for a probe to find."""
+        absolute = f"{self._root}{path}"
+        self.paths[absolute] = PathStat(exists=True, is_dir=True, readable=True)
+        self.sizes[absolute] = SizeReport(bytes_total=bytes_total, file_count=file_count)
+        return absolute
 
     def fail_on(self, operation: str, error: Exception) -> None:
         """Make the next call to `operation` raise, so callers can be tested."""

@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from stashd.domain.errors import ErrorCode, StashError
-from stashd.domain.storage import FilesetLocation, Owner
+from stashd.domain.storage import FilesetLocation, Owner, PathStat, ResolvedPath, SizeReport
+from stashd.engines.base import TransferEndpoint
 
 
 class DriverError(StashError):
@@ -30,6 +31,22 @@ class StorageCapabilities:
 class StorageDriver(Protocol):
     storage_id: str
     capabilities: StorageCapabilities
+
+    def resolve(self, storage_relative_path: str) -> ResolvedPath:
+        """Turn a path the user named into a real one inside this storage."""
+        ...
+
+    def stat(self, path: ResolvedPath, *, owner: Owner) -> PathStat:
+        """What ``owner`` can see there. Never what the daemon can see."""
+        ...
+
+    def measure(self, path: ResolvedPath, *, owner: Owner, timeout: float) -> SizeReport:
+        """Size and file count, as the owner, within the time given."""
+        ...
+
+    def endpoint(self, path: str) -> TransferEndpoint:
+        """How the transfer engine addresses this storage."""
+        ...
 
     def fileset_path(self, owner: Owner, name: str) -> str:
         """Where a fileset of this owner lives; deterministic."""
