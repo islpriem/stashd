@@ -69,6 +69,14 @@
   growth alone, shrinking below what is used needs an admin, and the storage is told about
   the new allocation where it can enforce one.
 
+- The scheduler: one pass orders the queue by decaying fair share, walks it
+  under an advisory lock so no transfer can be dispatched twice, applies every concurrency
+  limit, splits the route bandwidth at dispatch, and skips a drained storage. The
+  controller runs it on `scheduling.interval`.
+- Submitting a warm no longer moves data: it prepares the destination so the path is
+  available at once, charges the estimate against the user's fair share, and leaves the
+  transfer for the scheduler.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

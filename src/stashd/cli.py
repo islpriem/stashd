@@ -80,6 +80,7 @@ class Parts:
     reload_from: Path | None = None
     registrar: HttpRegistrar | None = None
     announcement: Announcement | None = None
+    schedule_every: float | None = None
 
 
 def _identity(kind: IdentityKind) -> Identity:
@@ -120,6 +121,7 @@ def _controller_parts(config: BootstrapConfig, document: ConfigDocument) -> Part
     if config.database is not None:
         parts.sessions = session_factory(create_engine(config.database.url))
     parts.auth = MungeAuthProvider(document.config.auth.munge_socket, SystemIdentityLookup())
+    parts.schedule_every = document.config.scheduling.interval.total_seconds()
     if config.peer_token_file is not None:
         token = config.peer_token_file.read_text().strip()
         client = httpx2.AsyncClient()
@@ -216,6 +218,7 @@ def main(
             reload_from=parts.reload_from,
             registrar=parts.registrar,
             announcement=parts.announcement,
+            schedule_every=parts.schedule_every,
         ),
         bootstrap.server,
     )

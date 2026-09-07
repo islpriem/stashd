@@ -34,6 +34,7 @@ from stashd.config.errors import ConfigError
 from stashd.config.reload import reload_document
 from stashd.domain.clock import Clock, SystemClock
 from stashd.drivers.base import StorageDriver
+from stashd.scheduler.loop import schedule_once
 from stashd.schemas.errors import ErrorEnvelope
 from stashd.tasks.runner import TaskRunner
 
@@ -118,6 +119,29 @@ async def refresh_cluster_config(app: FastAPI) -> bool:
     return changed
 
 
+async def schedule(app: FastAPI) -> int:
+    """One scheduler pass. Returns how many transfers it started."""
+    sessions = app.state.sessions
+    dispatcher = app.state.dispatcher
+    cluster = app.state.cluster
+    if sessions is None or dispatcher is None or cluster is None:
+        return 0
+    async with sessions() as session:
+        started = await schedule_once(
+            session, cluster=cluster, dispatcher=dispatcher, clock=app.state.clock
+        )
+    return len(started)
+
+
+async def _scheduler_loop(app: FastAPI, interval: float) -> None:  # pragma: no cover - a loop
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await schedule(app)
+        except Exception:
+            logger.exception("scheduler.failed")
+
+
 async def announce(app: FastAPI) -> bool:
     """Tell the controller what this daemon is on; it answers whether that is current."""
     registrar = app.state.registrar
@@ -146,6 +170,8 @@ async def background(app: FastAPI) -> AsyncIterator[None]:
         await announce(app)
     if plan is not None:
         tasks.append(asyncio.create_task(_refresh_loop(app, plan)))
+    if app.state.schedule_every is not None:
+        tasks.append(asyncio.create_task(_scheduler_loop(app, app.state.schedule_every)))
     if app.state.reload_from is not None:  # pragma: no cover - needs a real signal
         with suppress(NotImplementedError):
             asyncio.get_running_loop().add_signal_handler(
@@ -175,6 +201,7 @@ def create_app(
     reload_from: Path | None = None,
     registrar: object | None = None,
     announcement: object | None = None,
+    schedule_every: float | None = None,
     owners: OwnerLookup | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
@@ -195,6 +222,7 @@ def create_app(
     app.state.reload_from = reload_from
     app.state.registrar = registrar
     app.state.announcement = announcement
+    app.state.schedule_every = schedule_every
     app.state.owners = owners or SystemOwnerLookup()
     app.state.clock = clock or SystemClock()
     app.add_middleware(RequestContextMiddleware)
