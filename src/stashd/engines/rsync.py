@@ -30,6 +30,8 @@ logger = structlog.get_logger()
 
 BASE_ARGUMENTS = ("-a", "--numeric-ids", "--partial", "--info=progress2,stats2")
 KIB = 1024
+# Never wait for a password or a host-key answer: a transfer must fail, not hang.
+SSH_COMMAND = "ssh -o BatchMode=yes"
 
 # "    32.77M   4%   31.25MB/s    0:00:01"
 _PROGRESS = re.compile(r"^\s*([\d,.]+)([KMGT]?)\s+\d+%\s+\S+\s+\d+:\d{2}:\d{2}")
@@ -125,6 +127,8 @@ class RsyncEngine:
         owner: Owner,
     ) -> list[str]:
         argv = [self._rsync, *BASE_ARGUMENTS]
+        if source.is_remote or target.is_remote:
+            argv.extend(["-e", SSH_COMMAND])
         if options.bwlimit_bytes_per_s is not None:
             # rsync reads --bwlimit as KiB/s unless a suffix says otherwise.
             argv.append(f"--bwlimit={options.bwlimit_bytes_per_s // KIB}")

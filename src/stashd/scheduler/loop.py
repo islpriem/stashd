@@ -14,7 +14,7 @@ from stashd.config.cluster import ClusterConfig
 from stashd.domain.clock import Clock
 from stashd.domain.errors import StashError
 from stashd.domain.priority import DecayingFairShare, PriorityPolicy, order_queue
-from stashd.domain.routes import Route
+from stashd.domain.routes import Channel, Route, channel_for
 from stashd.domain.scheduling import (
     BandwidthLimits,
     ConcurrencyLimits,
@@ -77,7 +77,7 @@ async def schedule_once(
         transfer = by_id[dispatch.transfer_id]
         if not transfer.kind.moves_data:
             continue  # a release moves nothing; it is carried out where it was asked for
-        if await _start(session, dispatcher, transfer, dispatch):
+        if await _start(session, dispatcher, transfer, dispatch, cluster):
             started.append(dispatch)
     await session.commit()
     return started
@@ -165,6 +165,7 @@ async def _start(
     dispatcher: TransferDispatcher,
     transfer: Transfer,
     dispatch: Dispatch,
+    cluster: ClusterConfig,
 ) -> bool:
     """Hand one transfer to the daemon that owns its source. A refusal leaves it queued."""
     fileset = await session.get(Fileset, transfer.fileset_id)
@@ -173,13 +174,14 @@ async def _start(
     source_storage, _ = transfer.route.split("->", 1)
     source_path = (transfer.peer_ref or "").split(":", 1)[-1]
     owner = Owner(user=fileset.owner_user, uid=fileset.owner_uid, gid=fileset.owner_gid)
+    target = _endpoint(cluster, source_storage, fileset, owner)
     try:
         started = await dispatcher.start(
             source_storage,
             transfer_id=transfer.id,
             source_path=source_path,
             owner=owner,
-            target=TransferEndpoint(path=fileset.path),
+            target=target,
             bwlimit_bytes_per_s=dispatch.bwlimit_bytes_per_s,
             delete=transfer.kind is TransferKind.WARM
             and transfer.attempt > 0
@@ -195,9 +197,26 @@ async def _start(
         return False
     transfer.state = next_transfer_state(transfer.state, TransferState.ASSIGNED)
     transfer.executing_daemon_id = started.daemon_id
+    transfer.task_id = started.task_id
     transfer.bwlimit_bytes_per_s = dispatch.bwlimit_bytes_per_s
     logger.info("dispatch.started", transfer_id=transfer.id, daemon=started.daemon_id)
     return True
+
+
+def _endpoint(
+    cluster: ClusterConfig, source_storage: str, fileset: Fileset, owner: Owner
+) -> TransferEndpoint:
+    """A local path when one daemon owns both ends, an ssh destination otherwise.
+
+    The connection is made as the owner, which is who the source side is already running
+    as. A deployment that connects as a service account instead needs rsync's
+    --rsync-path, which is the other half of that open question and is not implemented.
+    """
+    source_daemon = cluster.daemon_for(source_storage)
+    target_daemon = cluster.daemon_for(fileset.storage_id)
+    if channel_for(source_daemon.id, target_daemon.id) is Channel.LOCAL:
+        return TransferEndpoint(path=fileset.path)
+    return TransferEndpoint(path=fileset.path, host=target_daemon.host, user=owner.user)
 
 
 def _is_refresh(fileset: Fileset) -> bool:

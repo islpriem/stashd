@@ -323,3 +323,44 @@ class TestControllerLoop:
         from stashd.api.app import create_app, schedule
 
         assert await schedule(create_app(storage_bootstrap)) == 0
+
+
+class TestChannels:
+    """Which channel a transfer uses is decided from the pair of daemons."""
+
+    async def test_one_daemon_for_both_ends_means_a_local_path(
+        self,
+        session: AsyncSession,
+        sessions: async_sessionmaker[AsyncSession],
+        valid_cluster: dict[str, Any],
+        write_cluster: Any,
+        dispatcher: Any,
+    ) -> None:
+        from stashd.config.cluster import load_cluster_config
+
+        for storage in valid_cluster["storages"]:
+            storage["daemon"] = "hot1"
+        cluster = load_cluster_config(write_cluster(valid_cluster))
+        await queued(session)
+
+        await run(sessions, cluster, dispatcher)
+
+        started = dispatcher.started[0]
+        assert started["target_host"] is None
+        assert started["target"] == "/fake/cache/mmustermann/mydir"
+
+    async def test_two_daemons_mean_an_ssh_destination(
+        self,
+        session: AsyncSession,
+        sessions: async_sessionmaker[AsyncSession],
+        cluster_config: ClusterConfig,
+        dispatcher: Any,
+    ) -> None:
+        """HOT1 is on hot1 and LOC2HOT on loc2hot, so the data crosses hosts."""
+        await queued(session)
+
+        await run(sessions, cluster_config, dispatcher)
+
+        started = dispatcher.started[0]
+        assert started["target_host"] == "stash-loc2.example.org"
+        assert started["target_user"] == "mmustermann", "rsync connects as the owner"
