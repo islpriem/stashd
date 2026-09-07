@@ -14,6 +14,17 @@ INTERNAL_PREFIX = "/internal/v1"
 
 
 @dataclass(frozen=True, slots=True)
+class TaskState:
+    """What a daemon says a task is doing now."""
+
+    state: str
+    bytes_done: int = 0
+    files_done: int = 0
+    failure: str | None = None
+    message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class StartedTask:
     task_id: str
     daemon_id: str
@@ -30,6 +41,8 @@ class ProbeResult:
 
 
 class TransferDispatcher(Protocol):
+    async def task_state(self, storage_id: str, task_id: str) -> TaskState: ...
+
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult: ...
 
     async def prepare(
@@ -115,23 +128,46 @@ class HttpTransferDispatcher:
             task_id=str(body["task_id"]), daemon_id=self._cluster.daemon_for(storage_id).id
         )
 
+    async def task_state(self, storage_id: str, task_id: str) -> TaskState:
+        daemon = self._cluster.daemon_for(storage_id)
+        body = await self._request(
+            daemon.id, storage_id, "GET", f"{daemon.url}{INTERNAL_PREFIX}/tasks/{task_id}", None
+        )
+        return TaskState(
+            state=str(body["state"]),
+            bytes_done=int(body.get("bytes_done", 0)),
+            files_done=int(body.get("files_done", 0)),
+            failure=body.get("failure"),
+            message=str(body.get("message", "")),
+        )
+
     async def _post(self, storage_id: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
         daemon = self._cluster.daemon_for(storage_id)
+        return await self._request(
+            daemon.id, storage_id, "POST", f"{daemon.url}{INTERNAL_PREFIX}{path}", body
+        )
+
+    async def _request(
+        self,
+        daemon_id: str,
+        storage_id: str,
+        method: str,
+        url: str,
+        body: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         try:
-            response = await self._client.post(
-                f"{daemon.url}{INTERNAL_PREFIX}{path}",
-                json=body,
-                headers={"Authorization": f"Bearer {self._token}"},
+            response = await self._client.request(
+                method, url, json=body, headers={"Authorization": f"Bearer {self._token}"}
             )
         except httpx2.HTTPError as error:
             raise DaemonUnavailable(
-                f"daemon {daemon.id} for {storage_id} is unreachable: {error}",
-                daemon=daemon.id,
+                f"daemon {daemon_id} for {storage_id} is unreachable: {error}",
+                daemon=daemon_id,
                 storage=storage_id,
             ) from error
         if response.is_success:
             return dict(response.json())
-        raise failure_from(response, daemon.id, storage_id)
+        raise failure_from(response, daemon_id, storage_id)
 
 
 def _owner(owner: Owner) -> dict[str, Any]:

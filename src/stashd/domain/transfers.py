@@ -35,8 +35,15 @@ _TRANSITIONS: dict[TransferState, frozenset[TransferState]] = {
     TransferState.SUBMITTED: frozenset(
         {TransferState.ASSIGNED, TransferState.FAILED, TransferState.CANCELLED}
     ),
+    # Back to SUBMITTED is how a dispatch that never reached a daemon is recovered.
+    # A daemon event can never do this: is_backwards() refuses it.
     TransferState.ASSIGNED: frozenset(
-        {TransferState.RUNNING, TransferState.FAILED, TransferState.CANCELLED}
+        {
+            TransferState.RUNNING,
+            TransferState.SUBMITTED,
+            TransferState.FAILED,
+            TransferState.CANCELLED,
+        }
     ),
     TransferState.RUNNING: frozenset(
         {TransferState.SUCCEEDED, TransferState.FAILED, TransferState.CANCELLED}

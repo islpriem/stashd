@@ -70,6 +70,7 @@ class TestTransferStates:
             (TransferState.RUNNING, TransferState.FAILED),
             (TransferState.RUNNING, TransferState.CANCELLED),
             (TransferState.FAILED, TransferState.SUBMITTED),
+            (TransferState.ASSIGNED, TransferState.SUBMITTED),
         ],
     )
     def test_allowed_transitions(self, current: TransferState, target: TransferState) -> None:
@@ -99,6 +100,11 @@ class TestTransferStates:
     )
     def test_a_terminal_transfer_cannot_be_cancelled(self, state: TransferState) -> None:
         assert not can_cancel(state)
+
+    def test_a_dispatch_that_never_landed_can_be_offered_again(self) -> None:
+        """The controller may put it back; a late daemon event still may not."""
+        assert next_transfer_state(TransferState.ASSIGNED, TransferState.SUBMITTED)
+        assert is_backwards(TransferState.ASSIGNED, TransferState.SUBMITTED)
 
     def test_an_event_that_moves_backwards_is_recognised(self) -> None:
         assert is_backwards(TransferState.RUNNING, TransferState.ASSIGNED)
