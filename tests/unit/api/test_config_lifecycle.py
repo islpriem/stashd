@@ -176,3 +176,34 @@ class TestAnnouncing:
         from stashd.api.app import announce
 
         assert await announce(create_app(storage_bootstrap)) is False
+
+
+class TestShutdown:
+    """A daemon that is going down finishes what it can and reports the rest."""
+
+    class FakeRunner:
+        def __init__(self) -> None:
+            self.drained_for: float | None = None
+
+        def drain(self, timeout: float) -> int:
+            self.drained_for = timeout
+            return 2
+
+    async def test_shutting_down_drains_for_the_configured_time(
+        self, storage_bootstrap: BootstrapConfig, cluster_config: Any
+    ) -> None:
+        from stashd.api.app import _drain
+
+        runner = self.FakeRunner()
+        app = create_app(storage_bootstrap, cluster_config, runner=runner)  # type: ignore[arg-type]
+
+        await _drain(app)
+
+        assert runner.drained_for == 300.0, "timeouts.drain, five minutes by default"
+
+    async def test_a_process_with_nothing_running_drains_nothing(
+        self, storage_bootstrap: BootstrapConfig
+    ) -> None:
+        from stashd.api.app import _drain
+
+        await _drain(create_app(storage_bootstrap))

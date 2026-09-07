@@ -90,6 +90,11 @@
   is offered again; a daemon that cannot be asked is given `timeouts.daemon_unreachable`
   before its work is given up on.
 
+- Graceful shutdown: a daemon stops taking work, lets what is running finish for
+  `timeouts.drain`, then cancels the rest and reports it. `daemon_unreachable` and
+  `daemon_shutdown` are now failure classes, so a deployment can list them in
+  `transfer.retries.retry_on`.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

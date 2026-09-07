@@ -175,6 +175,17 @@ async def _refresh_loop(app: FastAPI, plan: RefreshPlan) -> None:  # pragma: no 
         await refresh_cluster_config(app)
 
 
+async def _drain(app: FastAPI) -> None:
+    """Let running transfers finish, then give up on them and say so."""
+    runner = app.state.runner
+    cluster: ClusterConfig | None = app.state.cluster
+    if runner is None or cluster is None or not hasattr(runner, "drain"):
+        return
+    seconds = cluster.timeouts.drain.total_seconds()
+    cut_off = await asyncio.to_thread(runner.drain, seconds)
+    logger.info("daemon.drained", cut_off=cut_off, waited_seconds=seconds)
+
+
 @asynccontextmanager
 async def background(app: FastAPI) -> AsyncIterator[None]:
     """Keep the cluster config current: refresh on a daemon, SIGHUP on the controller."""
@@ -197,6 +208,7 @@ async def background(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await _drain(app)
         for task in tasks:
             task.cancel()
 
