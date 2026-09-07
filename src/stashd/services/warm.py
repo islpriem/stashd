@@ -19,15 +19,15 @@ from stashd.domain.allocation import (
 )
 from stashd.domain.clock import Clock
 from stashd.domain.errors import ErrorCode, NotFound, StashError
+from stashd.domain.fairshare import points_for_bytes
 from stashd.domain.filesets import FilesetKind, FilesetState, next_fileset_state
 from stashd.domain.identity import Principal
 from stashd.domain.references import validate_fileset_name
-from stashd.domain.routes import Channel, Route, channel_for, estimate, throughput_for
+from stashd.domain.routes import Route, estimate, throughput_for
 from stashd.domain.storage import Owner
-from stashd.domain.transfers import TransferKind, TransferState, next_transfer_state
-from stashd.engines.base import TransferEndpoint
+from stashd.domain.transfers import TransferKind, TransferState
 from stashd.models import Fileset, Transfer
-from stashd.services import audit
+from stashd.services import audit, fairshare
 from stashd.services.filesets import (
     FilesetExists,
     admission_state,
@@ -267,15 +267,18 @@ async def submit_warm(
     fileset.warm_started_at = clock.now()
     await session.commit()
 
-    await _dispatch(
-        cluster=cluster,
-        dispatcher=dispatcher,
-        owner=owner,
-        fileset=fileset,
-        transfer=transfer,
-        source_storage_id=source_storage_id,
-        source_path=source_path,
-        refresh=plan.refresh,
+    await _prepare_destination(dispatcher=dispatcher, owner=owner, fileset=fileset)
+    # Anti queue-stuffing: the estimate is charged now, and refunded if it never runs.
+    await fairshare.charge(
+        session,
+        owner.user,
+        points_for_bytes(
+            TransferKind.WARM,
+            plan.bytes_total,
+            points_per_gib=cluster.scheduling.fairshare.points_per_gib,
+        ),
+        clock,
+        cluster.scheduling.fairshare.half_life,
     )
     audit.record(
         session,
@@ -307,18 +310,16 @@ async def _check_queue_length(session: AsyncSession, cluster: ClusterConfig, use
         )
 
 
-async def _dispatch(
+async def _prepare_destination(
     *,
-    cluster: ClusterConfig,
     dispatcher: TransferDispatcher,
     owner: Owner,
     fileset: Fileset,
-    transfer: Transfer,
-    source_storage_id: str,
-    source_path: str,
-    refresh: bool,
 ) -> None:
-    """Prepare the destination, then hand the work to the source-side daemon."""
+    """The directory exists as soon as the warm is accepted, so its path can be returned.
+
+    Moving the data is the scheduler's decision, not this request's.
+    """
     endpoint = await dispatcher.prepare(
         fileset.storage_id, owner, fileset.name, fileset.allocated_bytes
     )
@@ -326,24 +327,3 @@ async def _dispatch(
     if fileset.state is FilesetState.CREATING:
         fileset.state = next_fileset_state(fileset.state, FilesetState.READY)
     fileset.state = next_fileset_state(fileset.state, FilesetState.POPULATING)
-
-    channel = channel_for(
-        cluster.daemon_for(source_storage_id).id, cluster.daemon_for(fileset.storage_id).id
-    )
-    if channel is Channel.SSH:
-        raise Conflict(
-            f"{transfer.route} needs the ssh channel, which is not supported yet",
-            route=transfer.route,
-        )
-    # One daemon for both ends: the target is a plain local path.
-    started = await dispatcher.start(
-        source_storage_id,
-        transfer_id=transfer.id,
-        source_path=source_path,
-        owner=owner,
-        target=TransferEndpoint(path=endpoint.path),
-        bwlimit_bytes_per_s=None,
-        delete=refresh,
-    )
-    transfer.executing_daemon_id = started.daemon_id
-    transfer.state = next_transfer_state(transfer.state, TransferState.ASSIGNED)

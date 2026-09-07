@@ -38,7 +38,7 @@ def warm(**extra: Any) -> dict[str, Any]:
 
 
 class TestSubmission:
-    async def test_a_warm_is_queued_and_dispatched(
+    async def test_a_warm_is_queued_for_the_scheduler(
         self, api: httpx2.AsyncClient, session: AsyncSession, dispatcher: Any
     ) -> None:
         response = await api.post("/transfers", json=warm())
@@ -46,11 +46,11 @@ class TestSubmission:
         assert response.status_code == 201
         body = response.json()
         assert body["kind"] == "warm"
-        assert body["state"] == "ASSIGNED"
+        assert body["state"] == "SUBMITTED", "the scheduler decides when it runs"
         assert body["route"] == "HOT1->LOC2HOT"
         assert body["bytes_total"] == 20 * GIB
         assert body["peer_ref"] == "HOT1:/myuser/mydirectory"
-        assert dispatcher.started, "the source daemon was asked to move the data"
+        assert not dispatcher.started, "nothing moves until the scheduler says so"
 
     async def test_the_fileset_is_created_and_populating(
         self, api: httpx2.AsyncClient, session: AsyncSession
@@ -81,13 +81,26 @@ class TestSubmission:
         fileset = (await session.scalars(sa.select(Fileset))).one()
         assert fileset.allocated_bytes == 30 * GIB
 
-    async def test_the_destination_is_prepared_before_the_data_moves(
+    async def test_the_destination_exists_as_soon_as_the_warm_is_accepted(
         self, api: httpx2.AsyncClient, dispatcher: Any
     ) -> None:
+        """The path is returned right away, so a job script can use it."""
+        response = await api.post("/transfers", json=warm())
+
+        assert response.status_code == 201
+        assert dispatcher.prepared[0][1] == "mydir"
+
+    async def test_the_estimate_is_charged_to_the_user_at_once(
+        self, api: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        """Anti queue-stuffing: submitting costs points before anything runs."""
+        from stashd.models import FairShareAccountRow
+
         await api.post("/transfers", json=warm())
 
-        assert dispatcher.prepared[0][1] == "mydir"
-        assert dispatcher.started[0]["source_path"] == "/myuser/mydirectory"
+        account = (await session.scalars(sa.select(FairShareAccountRow))).one()
+        assert account.user == "mmustermann"
+        assert account.points == 20.0, "20 GiB at one point per GiB"
 
     async def test_a_warm_is_audited(
         self, api: httpx2.AsyncClient, session: AsyncSession
@@ -201,7 +214,7 @@ class TestRefresh:
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "CONFLICT"
 
-    async def test_a_refresh_reuses_the_fileset_and_deletes_at_the_target(
+    async def test_a_refresh_reuses_the_fileset(
         self, api: httpx2.AsyncClient, session: AsyncSession, dispatcher: Any
     ) -> None:
         await api.post("/transfers", json=warm())
@@ -211,7 +224,6 @@ class TestRefresh:
 
         assert response.status_code == 201
         assert (await session.scalar(sa.select(sa.func.count()).select_from(Fileset))) == 1
-        assert dispatcher.started[-1]["delete"] is True
 
     async def test_a_different_source_into_the_same_name_is_refused(
         self, api: httpx2.AsyncClient, session: AsyncSession
@@ -255,11 +267,11 @@ class TestChannels:
         """The real topology: HOT1 and LOC2HOT are served by different daemons."""
         return copy.deepcopy(VALID_CLUSTER)
 
-    async def test_a_warm_between_two_daemons_needs_the_ssh_channel(
+    async def test_a_warm_between_two_daemons_is_accepted(
         self, api: httpx2.AsyncClient, session: AsyncSession
     ) -> None:
-        """Not supported yet: it is refused, not attempted."""
+        """The channel is the scheduler's to choose when it dispatches."""
         response = await api.post("/transfers", json=warm())
 
-        assert response.status_code == 409
-        assert "ssh" in response.json()["error"]["message"]
+        assert response.status_code == 201
+        assert response.json()["route"] == "HOT1->LOC2HOT"
