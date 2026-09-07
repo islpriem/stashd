@@ -2189,6 +2189,22 @@
           },
           {
             "in": "query",
+            "name": "route",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Route"
+            }
+          },
+          {
+            "in": "query",
             "name": "fileset_id",
             "required": false,
             "schema": {

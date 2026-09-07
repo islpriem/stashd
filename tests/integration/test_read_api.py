@@ -270,6 +270,8 @@ class TestTransfers:
         assert await ids(storage="LOC2HOT") == [1]
         assert await ids(storage="OTHER") == [2]
         assert await ids(storage="HOT1") == [1]
+        assert await ids(route="HOT1->LOC2HOT") == [1]
+        assert await ids(route="NOWHERE->LOC2HOT") == []
 
     async def test_the_transfers_of_one_fileset_are_its_history(
         self, api: httpx2.AsyncClient, session: AsyncSession
