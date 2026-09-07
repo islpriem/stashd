@@ -77,6 +77,12 @@
   available at once, charges the estimate against the user's fair share, and leaves the
   transfer for the scheduler.
 
+- Retries: a failure in a class `transfer.retries.retry_on` names goes back into
+  the queue with its place kept and a backoff the scheduler waits out, up to
+  `retries.count`; permission, quota and validation failures never do. A transfer that
+  failed or was cancelled before it ran gets its fair-share estimate back.
+- Cluster config gains `timeouts`.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

@@ -48,7 +48,7 @@ async def schedule_once(
         logger.debug("scheduler.busy")
         return []
 
-    waiting = await _waiting(session)
+    waiting = await _waiting(session, clock)
     if not waiting:
         await session.rollback()
         return []
@@ -90,10 +90,14 @@ async def _take_lock(session: AsyncSession) -> bool:
     return bool(taken)
 
 
-async def _waiting(session: AsyncSession) -> list[Transfer]:
+async def _waiting(session: AsyncSession, clock: Clock) -> list[Transfer]:
+    """What may be offered now: a retry waits out its backoff first."""
     rows = await session.scalars(
         sa.select(Transfer)
-        .where(Transfer.state == TransferState.SUBMITTED)
+        .where(
+            Transfer.state == TransferState.SUBMITTED,
+            sa.or_(Transfer.retry_after.is_(None), Transfer.retry_after <= clock.now()),
+        )
         .order_by(Transfer.id)
     )
     return list(rows)
