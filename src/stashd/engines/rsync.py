@@ -148,7 +148,12 @@ class RsyncEngine:
         on_progress: ProgressCallback | None = None,
     ) -> TransferResult:
         argv = self.command(source, target, options, owner=owner)
-        logger.info("transfer.start", handle=handle, argv=argv[0], target=target.path)
+        logger.info(
+            "transfer.start",
+            handle=handle,
+            channel="ssh" if source.is_remote or target.is_remote else "local",
+            target=target.as_argument(),
+        )
         process = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE,
