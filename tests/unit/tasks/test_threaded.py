@@ -112,3 +112,38 @@ def test_aborting_something_unknown_says_so(drivers: dict[str, StorageDriver]) -
 
     assert runner.abort("nope") is False
     assert runner.progress("nope") is None
+
+
+class TestShutdown:
+    def test_a_draining_daemon_takes_no_new_work(
+        self, drivers: dict[str, StorageDriver]
+    ) -> None:
+        from stashd.domain.errors import StashError
+
+        runner = ThreadTaskRunner(drivers, FakeEngine(), RecordingReporter())
+        runner.stop_accepting()
+
+        with pytest.raises(StashError):
+            runner.submit(task())
+
+    def test_what_is_still_running_when_the_time_runs_out_is_reported_failed(
+        self, drivers: dict[str, StorageDriver]
+    ) -> None:
+        reporter = RecordingReporter()
+        engine = FakeEngine()
+        runner = ThreadTaskRunner(drivers, engine, reporter)
+        task_id = runner.submit(task())
+        finished(runner, task_id)
+
+        assert runner.drain(timeout=0.5) == 0, "nothing was still running"
+        assert [kind for _, kind, _ in reporter.events][-1] == "finished"
+
+    def test_draining_waits_for_what_is_running(
+        self, drivers: dict[str, StorageDriver]
+    ) -> None:
+        reporter = RecordingReporter()
+        runner = ThreadTaskRunner(drivers, FakeEngine(), reporter)
+        runner.submit(task())
+
+        assert runner.drain(timeout=10) == 0
+        assert [kind for _, kind, _ in reporter.events][-1] == "finished"

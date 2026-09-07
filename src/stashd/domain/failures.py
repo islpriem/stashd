@@ -12,5 +12,9 @@ class FailureClass(StrEnum):
     NETWORK = "network"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
+    # Classified here so a deployment can list them in
+    # transfer.retries.retry_on.
+    DAEMON_UNREACHABLE = "daemon_unreachable"
+    DAEMON_SHUTDOWN = "daemon_shutdown"
     TOOL_ERROR = "tool_error"
     INTERNAL = "internal"
