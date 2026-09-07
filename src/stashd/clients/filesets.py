@@ -34,6 +34,8 @@ class FilesetStore(Protocol):
 
     async def delete(self, fileset_id: int, location: FilesetLocation) -> None: ...
 
+    async def set_quota(self, location: FilesetLocation, allocation_bytes: int) -> None: ...
+
 
 class HttpFilesetStore:
     def __init__(self, cluster: ClusterConfig, token: str, client: httpx2.AsyncClient) -> None:
@@ -70,6 +72,21 @@ class HttpFilesetStore:
                 "name": location.name,
                 "owner": {"user": owner.user, "uid": owner.uid, "gid": owner.gid},
                 "path": location.path,
+            },
+        )
+
+    async def set_quota(self, location: FilesetLocation, allocation_bytes: int) -> None:
+        owner = location.owner
+        await self._request(
+            location.storage_id,
+            "POST",
+            "/filesets/quota",
+            {
+                "storage_id": location.storage_id,
+                "name": location.name,
+                "owner": {"user": owner.user, "uid": owner.uid, "gid": owner.gid},
+                "path": location.path,
+                "allocation_bytes": allocation_bytes,
             },
         )
 

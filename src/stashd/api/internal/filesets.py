@@ -11,7 +11,7 @@ from stashd.domain.errors import NotFound
 from stashd.domain.storage import FilesetLocation as DomainLocation
 from stashd.domain.storage import Owner as DomainOwner
 from stashd.drivers.base import StorageDriver
-from stashd.schemas.internal import CreateFileset, DeleteFileset, FilesetLocation
+from stashd.schemas.internal import CreateFileset, DeleteFileset, FilesetLocation, SetQuota
 
 router = APIRouter()
 
@@ -33,6 +33,18 @@ async def create_fileset(request: Request, body: CreateFileset) -> FilesetLocati
     return FilesetLocation(
         storage_id=location.storage_id, name=location.name, path=location.path
     )
+
+
+@router.post("/filesets/quota", status_code=status.HTTP_204_NO_CONTENT)
+async def set_quota(request: Request, body: SetQuota) -> Response:
+    """Apply an allocation to the storage, where the driver can enforce one."""
+    driver = driver_for(request, body.storage_id)
+    owner = DomainOwner(user=body.owner.user, uid=body.owner.uid, gid=body.owner.gid)
+    driver.set_fileset_quota(
+        DomainLocation(storage_id=body.storage_id, name=body.name, owner=owner, path=body.path),
+        body.allocation_bytes,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/filesets/{fileset_id}", status_code=status.HTTP_204_NO_CONTENT)

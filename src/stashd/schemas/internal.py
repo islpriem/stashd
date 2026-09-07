@@ -30,6 +30,14 @@ class DeleteFileset(Wire):
     path: str
 
 
+class SetQuota(Wire):
+    storage_id: str
+    name: str
+    owner: Owner
+    path: str
+    allocation_bytes: int
+
+
 class FilesetLocation(Wire):
     storage_id: str
     name: str
