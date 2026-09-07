@@ -1,14 +1,14 @@
-# Storage daemon for HOT1: uv run stashd --config dev/daemon-hot1.yaml
+# Storage daemon for LOC2HOT: uv run stashd --config dev/daemon-loc2hot.yaml
 # Paths are relative to this file.
 self:
-  daemon_id: hot1
+  daemon_id: loc2hot
   role: storage
-  storages: [HOT1]
+  storages: [LOC2HOT]
 controller: { url: "http://127.0.0.1:8000", token_file: peer-token }
-server: { host: 127.0.0.1, port: 8001 }
+server: { host: 127.0.0.1, port: 8002 }
 broker: { url: "redis://localhost:6379/0" }
 logging: { level: DEBUG, format: console }
-cache_dir: var/hot1
+cache_dir: var/loc2hot
 peer_token_file: peer-token
 # Development runs as its own user; production uses sudo.
 identity: current

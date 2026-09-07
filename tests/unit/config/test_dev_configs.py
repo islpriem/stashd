@@ -23,7 +23,7 @@ def test_storage_daemon_dev_config_is_valid() -> None:
     config = load_bootstrap_config(DEV / "daemon-hot1.yaml")
 
     assert config.node.role is DaemonRole.STORAGE
-    assert config.node.storages == ["HOT1", "LOC2HOT"]
+    assert config.node.storages == ["HOT1"]
     assert config.server.port == 8001
 
 
@@ -57,6 +57,8 @@ def test_dev_storage_roots_stay_where_the_render_puts_them(tmp_path: Path) -> No
         "cluster.yaml.in",
         "controller-e2e.yaml",
         "daemon-e2e.yaml",
+        "daemon-loc2hot.yaml",
+        "daemon-loc2hot-e2e.yaml",
     ],
 )
 def test_dev_configs_exist(name: str) -> None:

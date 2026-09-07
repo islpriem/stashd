@@ -6,9 +6,10 @@ locations:
   - { id: LOC1, name: "Development site 1" }
   - { id: LOC2, name: "Development site 2" }
 daemons:
-  # One daemon serves both storages: a warm between them uses the local channel. The
-  # ssh channel, and a second daemon, arrive with the scheduler.
-  - { id: hot1, url: "http://127.0.0.1:8001" }
+  # Two daemons, so a warm between them crosses the ssh channel. `host` is where rsync
+  # connects; in development both are the same machine.
+  - { id: hot1, url: "http://127.0.0.1:8001", host: localhost }
+  - { id: loc2hot, url: "http://127.0.0.1:8002", host: localhost }
 storages:
   - id: HOT1
     location: LOC1
@@ -26,7 +27,7 @@ storages:
     capacity: 10Gi
     fill_limit: 0.95
     default_user_allocation_limit: 2Gi
-    daemon: hot1
+    daemon: loc2hot
 limits:
   user_total_cache_allocation: 4Gi
   max_filesets_per_user: 10

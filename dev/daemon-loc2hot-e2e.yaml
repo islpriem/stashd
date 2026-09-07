@@ -1,13 +1,13 @@
-# The storage daemon inside the e2e container: it serves both development storages. Paths are relative to this file.
+# The LOC2HOT storage daemon inside the e2e container, the receiving side of an ssh warm.
 self:
-  daemon_id: hot1
+  daemon_id: loc2hot
   role: storage
-  storages: [HOT1]
+  storages: [LOC2HOT]
 controller: { url: "http://127.0.0.1:8000", token_file: peer-token }
-server: { host: 127.0.0.1, port: 8001 }
+server: { host: 127.0.0.1, port: 8002 }
 broker: { url: "redis://redis:6379/0" }
 logging: { level: INFO, format: json }
-cache_dir: var/daemon
+cache_dir: var/loc2hot
 peer_token_file: peer-token
 # Become the user with sudo -n -u.
 identity: sudo
