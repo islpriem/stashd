@@ -223,6 +223,13 @@ class Auth(Section):
     admin_gids: list[int | str] = Field(default_factory=list)
 
 
+class Timeouts(Section):
+    """How long the controller waits before it stops believing a daemon."""
+
+    daemon_unreachable: Duration = timedelta(minutes=10)
+    drain: Duration = timedelta(minutes=5)
+
+
 class Retention(Section):
     transfers: Duration
     audit: Duration
@@ -238,6 +245,7 @@ class ClusterConfig(Section):
     transfer: Transfer
     auth: Auth
     retention: Retention
+    timeouts: Timeouts = Timeouts()
 
     @property
     def content_hash(self) -> str:

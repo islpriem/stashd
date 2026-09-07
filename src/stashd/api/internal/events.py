@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from stashd.api.deps import Session, Ticking
+from stashd.api.deps import Cluster, Session, Ticking
 from stashd.schemas.internal import EventAccepted, TransferEvent
 from stashd.services.events import Event, apply_event
 
@@ -11,7 +11,7 @@ router = APIRouter()
 
 @router.post("/events")
 async def transfer_event(
-    session: Session, clock: Ticking, body: TransferEvent
+    session: Session, clock: Ticking, cluster: Cluster, body: TransferEvent
 ) -> EventAccepted:
     applied, transfer = await apply_event(
         session,
@@ -27,5 +27,6 @@ async def transfer_event(
             failure=body.failure,
             message=body.message,
         ),
+        cluster,
     )
     return EventAccepted(transfer_id=transfer.id, applied=applied, state=str(transfer.state))

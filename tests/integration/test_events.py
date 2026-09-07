@@ -168,3 +168,103 @@ class TestApplying:
         )
 
         assert response.status_code == 401
+
+
+class TestRetries:
+    async def _failed(
+        self, peer: httpx2.AsyncClient, session: AsyncSession, failure: str
+    ) -> tuple[int, int]:
+        transfer_id, fileset_id = await warming(session)
+        await peer.post("/events", json=event(transfer_id, 1, "started"))
+        await peer.post(
+            "/events", json=event(transfer_id, 2, "failed", failure=failure, message="lost it")
+        )
+        session.expire_all()
+        return transfer_id, fileset_id
+
+    async def test_a_network_failure_goes_back_into_the_queue(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        transfer_id, fileset_id = await self._failed(peer, session, "network")
+
+        transfer = await session.get(Transfer, transfer_id)
+        fileset = await session.get(Fileset, fileset_id)
+        assert transfer is not None and fileset is not None
+        assert transfer.state is TransferState.SUBMITTED
+        assert transfer.attempt == 2
+        assert transfer.retry_after is not None, "it waits before being offered again"
+        assert transfer.submitted_at == T0, "its place in the queue is kept"
+        assert fileset.state is FilesetState.POPULATING, "it is still being filled"
+
+    async def test_permission_is_never_retried(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        transfer_id, fileset_id = await self._failed(peer, session, "permission_denied")
+
+        transfer = await session.get(Transfer, transfer_id)
+        fileset = await session.get(Fileset, fileset_id)
+        assert transfer is not None and fileset is not None
+        assert transfer.state is TransferState.FAILED
+        assert fileset.state is FilesetState.FAILED
+
+    async def test_a_failure_class_the_config_does_not_list_is_terminal(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        transfer_id, _ = await self._failed(peer, session, "no_space")
+
+        transfer = await session.get(Transfer, transfer_id)
+        assert transfer is not None and transfer.state is TransferState.FAILED
+
+    async def test_the_attempts_run_out(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        transfer_id, _ = await warming(session)
+        sequence = 0
+        for _ in range(4):
+            sequence += 1
+            await peer.post("/events", json=event(transfer_id, sequence, "started"))
+            sequence += 1
+            await peer.post(
+                "/events", json=event(transfer_id, sequence, "failed", failure="network")
+            )
+
+        session.expire_all()
+        transfer = await session.get(Transfer, transfer_id)
+        assert transfer is not None
+        assert transfer.state is TransferState.FAILED, "two retries, then it stays failed"
+        assert transfer.attempt == 3
+
+    async def test_a_transfer_that_never_ran_gets_its_points_back(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        from stashd.models import FairShareAccountRow
+
+        session.add(FairShareAccountRow(user="mmustermann", points=20.0, decayed_at=T0))
+        await session.commit()
+        transfer_id, _ = await warming(session)
+
+        await peer.post(
+            "/events", json=event(transfer_id, 1, "failed", failure="permission_denied")
+        )
+
+        session.expire_all()
+        account = await session.get(FairShareAccountRow, "mmustermann")
+        assert account is not None and account.points == 0.0
+
+    async def test_a_transfer_that_had_already_started_keeps_what_it_was_charged(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        from stashd.models import FairShareAccountRow
+
+        session.add(FairShareAccountRow(user="mmustermann", points=20.0, decayed_at=T0))
+        await session.commit()
+        transfer_id, _ = await warming(session)
+        await peer.post("/events", json=event(transfer_id, 1, "started"))
+
+        await peer.post(
+            "/events", json=event(transfer_id, 2, "failed", failure="permission_denied")
+        )
+
+        session.expire_all()
+        account = await session.get(FairShareAccountRow, "mmustermann")
+        assert account is not None and account.points == 20.0

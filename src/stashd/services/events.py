@@ -11,11 +11,20 @@ from datetime import datetime
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from stashd.config.cluster import ClusterConfig
 from stashd.domain.clock import Clock
 from stashd.domain.errors import NotFound
+from stashd.domain.failures import FailureClass
+from stashd.domain.fairshare import points_for_bytes
 from stashd.domain.filesets import FilesetState, next_fileset_state
-from stashd.domain.transfers import TransferState, is_backwards, next_transfer_state
+from stashd.domain.transfers import (
+    TransferState,
+    is_backwards,
+    next_transfer_state,
+    should_retry,
+)
 from stashd.models import Fileset, Transfer
+from stashd.services import fairshare
 
 logger = structlog.get_logger()
 
@@ -23,6 +32,7 @@ STARTED = "started"
 PROGRESS = "progress"
 FINISHED = "finished"
 FAILED = "failed"
+CANCELLED = "cancelled"
 
 _TARGET_STATE = {
     STARTED: TransferState.RUNNING,
@@ -46,7 +56,7 @@ class Event:
 
 
 async def apply_event(
-    session: AsyncSession, clock: Clock, event: Event
+    session: AsyncSession, clock: Clock, event: Event, cluster: ClusterConfig
 ) -> tuple[bool, Transfer]:
     transfer = await session.get(Transfer, event.transfer_id)
     if transfer is None:
@@ -83,13 +93,61 @@ async def apply_event(
         transfer.error_code = event.failure
         transfer.error_detail = event.message or None
 
-    await _apply_to_fileset(session, clock, transfer, event)
+    retrying = event.kind == FAILED and _retry(cluster, transfer, event)
+    if retrying:
+        _requeue(clock, cluster, transfer)
+    await _apply_to_fileset(session, clock, transfer, event, retrying=retrying)
+    if event.kind in (FAILED, CANCELLED) and not retrying:
+        await _refund(session, clock, cluster, transfer)
     await session.commit()
     return True, transfer
 
 
+def _retry(cluster: ClusterConfig, transfer: Transfer, event: Event) -> bool:
+    """Only the classes the config names, and only while attempts are left."""
+    try:
+        failure = FailureClass(str(event.failure))
+    except ValueError:
+        return False
+    return should_retry(
+        failure,
+        attempt=transfer.attempt,
+        count=cluster.transfer.retries.count,
+        retry_on=frozenset(cluster.transfer.retries.retry_on),
+    )
+
+
+def _requeue(clock: Clock, cluster: ClusterConfig, transfer: Transfer) -> None:
+    """Back into the queue, after a wait, keeping the place it had."""
+    transfer.state = next_transfer_state(transfer.state, TransferState.SUBMITTED)
+    transfer.attempt += 1
+    transfer.retry_after = clock.now() + cluster.transfer.retries.backoff
+    transfer.finished_at = None
+    transfer.task_id = None
+    logger.info("transfer.retrying", transfer_id=transfer.id, attempt=transfer.attempt)
+
+
+async def _refund(
+    session: AsyncSession, clock: Clock, cluster: ClusterConfig, transfer: Transfer
+) -> None:
+    """Refunded only when it never ran: 'on cancel or failure before RUNNING'."""
+    if transfer.started_at is not None:
+        return
+    await fairshare.charge(
+        session,
+        transfer.user,
+        -points_for_bytes(
+            transfer.kind,
+            transfer.bytes_total,
+            points_per_gib=cluster.scheduling.fairshare.points_per_gib,
+        ),
+        clock,
+        cluster.scheduling.fairshare.half_life,
+    )
+
+
 async def _apply_to_fileset(
-    session: AsyncSession, clock: Clock, transfer: Transfer, event: Event
+    session: AsyncSession, clock: Clock, transfer: Transfer, event: Event, *, retrying: bool
 ) -> None:
     fileset = await session.get(Fileset, transfer.fileset_id)
     if fileset is None:  # pragma: no cover - a transfer always has one
@@ -101,6 +159,6 @@ async def _apply_to_fileset(
         fileset.used_bytes = transfer.bytes_done
         fileset.used_bytes_at = clock.now()
         fileset.file_count = transfer.files_done or fileset.file_count
-    elif event.kind == FAILED:
+    elif event.kind == FAILED and not retrying:
         # The reservation stays until the owner releases the fileset.
         fileset.state = next_fileset_state(fileset.state, FilesetState.FAILED)
