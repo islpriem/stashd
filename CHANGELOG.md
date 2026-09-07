@@ -65,6 +65,10 @@
   told when the controller has moved on. `/storages` reports when each daemon was
   last seen and what revision it is on.
 
+- `PATCH /filesets/{id}` resizes an allocation: growing re-runs admission for the
+  growth alone, shrinking below what is used needs an admin, and the storage is told about
+  the new allocation where it can enforce one.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

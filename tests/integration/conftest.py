@@ -104,6 +104,9 @@ class DirectFilesetStore:
     async def delete(self, fileset_id: int, location: FilesetLocation) -> None:
         self.driver.delete_fileset(location)
 
+    async def set_quota(self, location: FilesetLocation, allocation_bytes: int) -> None:
+        self.driver.set_fileset_quota(location, allocation_bytes)
+
 
 class FixedClock:
     def __init__(self, now: datetime) -> None:

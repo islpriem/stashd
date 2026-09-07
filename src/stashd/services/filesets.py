@@ -13,10 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from stashd.clients.filesets import FilesetStore
 from stashd.config.cluster import ClusterConfig, StorageRole
-from stashd.domain.allocation import AllocationRequest, AllocationState, admit
+from stashd.domain.allocation import (
+    AllocationRequest,
+    AllocationState,
+    Conflict,
+    admit,
+    check_resize,
+)
 from stashd.domain.clock import Clock
 from stashd.domain.errors import ErrorCode, NotFound, StashError
-from stashd.domain.filesets import FilesetKind, FilesetState, next_fileset_state
+from stashd.domain.filesets import (
+    FilesetKind,
+    FilesetState,
+    holds_allocation,
+    next_fileset_state,
+)
 from stashd.domain.identity import Principal
 from stashd.domain.references import validate_fileset_name
 from stashd.domain.storage import FilesetLocation, Owner
@@ -244,3 +255,79 @@ def location_of(fileset: Fileset) -> FilesetLocation:
         owner=Owner(user=fileset.owner_user, uid=fileset.owner_uid, gid=fileset.owner_gid),
         path=fileset.path,
     )
+
+
+async def resize_fileset(
+    session: AsyncSession,
+    *,
+    cluster: ClusterConfig,
+    store: FilesetStore,
+    clock: Clock,
+    actor: Principal,
+    is_admin: bool,
+    fileset_id: int,
+    size_bytes: int,
+    force: bool,
+) -> Fileset:
+    """Growing re-runs admission; shrinking below usage needs an admin."""
+    fileset = await session.get(Fileset, fileset_id)
+    if fileset is None:
+        raise NotFound(f"no fileset with id {fileset_id}", fileset_id=fileset_id)
+    if fileset.owner_user != actor.username and not is_admin:
+        raise Forbidden(
+            f"{fileset.name} on {fileset.storage_id} belongs to {fileset.owner_user}",
+            owner=fileset.owner_user,
+        )
+    if force and not is_admin:
+        raise Forbidden("only an admin may force a resize below what is used")
+    if not holds_allocation(fileset.state):
+        raise Conflict(
+            f"{fileset.storage_id}:{fileset.name} is {fileset.state}", state=str(fileset.state)
+        )
+
+    await lock_user(session, fileset.owner_user)
+    try:
+        delta = check_resize(
+            current=fileset.allocated_bytes,
+            used=fileset.used_bytes,
+            new=size_bytes,
+            force=force,
+        )
+        if delta > 0:
+            admit(
+                AllocationRequest(
+                    user=fileset.owner_user,
+                    storage_id=fileset.storage_id,
+                    requested_bytes=delta,
+                ),
+                await admission_state(session, cluster, fileset.owner_user, fileset.storage_id),
+            )
+    except StashError as refusal:
+        audit.record(
+            session,
+            clock,
+            actor=actor,
+            subject_user=fileset.owner_user,
+            object_type="fileset",
+            object_id=str(fileset.id),
+            action="resize",
+            result=str(refusal.code),
+            detail=refusal.details,
+        )
+        await session.commit()
+        raise
+
+    fileset.allocated_bytes = size_bytes
+    await store.set_quota(location_of(fileset), size_bytes)
+    audit.record(
+        session,
+        clock,
+        actor=actor,
+        subject_user=fileset.owner_user,
+        object_type="fileset",
+        object_id=str(fileset.id),
+        action="resize",
+        detail={"allocated_bytes": size_bytes, "forced": force},
+    )
+    await session.commit()
+    return fileset

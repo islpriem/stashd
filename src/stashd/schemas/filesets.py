@@ -36,6 +36,13 @@ class Filesets(Wire):
     filesets: list[Fileset]
 
 
+class ResizeFileset(Wire):
+    """PATCH /filesets/{id}: change what is reserved. Renaming is not supported."""
+
+    size_bytes: int = Field(gt=0)
+    force: bool = False
+
+
 class CreateFileset(Wire):
     """POST /filesets: an output fileset with a reserved size."""
 

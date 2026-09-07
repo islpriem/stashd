@@ -4,10 +4,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, status
 
-from stashd.api.deps import Caller, Cluster, Session, Store, Ticking, subject_owner
+from stashd.api.deps import (
+    Caller,
+    Cluster,
+    Session,
+    Store,
+    Ticking,
+    caller_is_admin,
+    subject_owner,
+)
 from stashd.domain.filesets import FilesetKind, FilesetState
 from stashd.models import Fileset as FilesetRow
-from stashd.schemas.filesets import CreateFileset, Fileset, Filesets
+from stashd.schemas.filesets import CreateFileset, Fileset, Filesets, ResizeFileset
 from stashd.services import filesets as service
 
 router = APIRouter()
@@ -87,3 +95,27 @@ async def create_fileset(
         size_bytes=body.size_bytes,
     )
     return to_wire(created)
+
+
+@router.patch("/filesets/{fileset_id}")
+async def resize_fileset(
+    caller: Caller,
+    session: Session,
+    cluster: Cluster,
+    store: Store,
+    clock: Ticking,
+    fileset_id: int,
+    body: ResizeFileset,
+) -> Fileset:
+    resized = await service.resize_fileset(
+        session,
+        cluster=cluster,
+        store=store,
+        clock=clock,
+        actor=caller,
+        is_admin=caller_is_admin(caller, cluster),
+        fileset_id=fileset_id,
+        size_bytes=body.size_bytes,
+        force=body.force,
+    )
+    return to_wire(resized)
