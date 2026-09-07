@@ -83,6 +83,13 @@
   failed or was cancelled before it ran gets its fair-share estimate back.
 - Cluster config gains `timeouts`.
 
+- The `ssh` channel: the scheduler picks it from the pair of daemons and rsync
+  connects as the owner, in batch mode so a transfer fails rather than waits for a prompt.
+- Startup reconciliation: every transfer the controller thinks is in flight is
+  checked against the daemon that was running it. A dispatch that never reached a daemon
+  is offered again; a daemon that cannot be asked is given `timeouts.daemon_unreachable`
+  before its work is given up on.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,
