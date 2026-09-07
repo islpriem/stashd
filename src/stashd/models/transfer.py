@@ -30,6 +30,10 @@ class Transfer(Base):
     attempt: Mapped[Count] = mapped_column(default=1)
     # Daemon events arrive duplicated and out of order; this is what orders them.
     last_sequence: Mapped[Count] = mapped_column(default=0)
+    # What the executing daemon calls this work, so it can be asked about it.
+    task_id: Mapped[Name | None] = mapped_column(default=None)
+    # A retry waits before it is offered again; submitted_at keeps its place.
+    retry_after: Mapped[datetime | None] = mapped_column(default=None)
     error_code: Mapped[Name | None] = mapped_column(default=None)
     error_detail: Mapped[str | None] = mapped_column(default=None)
     submitted_at: Mapped[datetime]
