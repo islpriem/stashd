@@ -137,6 +137,8 @@ class FakeDispatcher:
         self.file_count = 12043
         self.prepared: list[tuple[str, str]] = []
         self.started: list[dict[str, Any]] = []
+        self.fail_start: Exception | None = None
+        self.fail_start_once: Exception | None = None
 
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult:
         return ProbeResult(
@@ -165,12 +167,18 @@ class FakeDispatcher:
         bwlimit_bytes_per_s: int | None,
         delete: bool,
     ) -> StartedTask:
+        if self.fail_start is not None:
+            raise self.fail_start
+        if self.fail_start_once is not None:
+            failure, self.fail_start_once = self.fail_start_once, None
+            raise failure
         self.started.append(
             {
                 "storage_id": storage_id,
                 "transfer_id": transfer_id,
                 "source_path": source_path,
                 "target": target.path,
+                "bwlimit_bytes_per_s": bwlimit_bytes_per_s,
                 "delete": delete,
             }
         )
