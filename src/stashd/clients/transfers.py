@@ -43,6 +43,8 @@ class ProbeResult:
 class TransferDispatcher(Protocol):
     async def task_state(self, storage_id: str, task_id: str) -> TaskState: ...
 
+    async def abort(self, storage_id: str, task_id: str) -> None: ...
+
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult: ...
 
     async def prepare(
@@ -139,6 +141,17 @@ class HttpTransferDispatcher:
             files_done=int(body.get("files_done", 0)),
             failure=body.get("failure"),
             message=str(body.get("message", "")),
+        )
+
+    async def abort(self, storage_id: str, task_id: str) -> None:
+        """Kill it where it runs. The partial data stays where it is."""
+        daemon = self._cluster.daemon_for(storage_id)
+        await self._request(
+            daemon.id,
+            storage_id,
+            "DELETE",
+            f"{daemon.url}{INTERNAL_PREFIX}/tasks/{task_id}",
+            None,
         )
 
     async def _post(self, storage_id: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
