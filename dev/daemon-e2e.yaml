@@ -1,4 +1,4 @@
-# The storage daemon inside the e2e container: it serves both development storages. Paths are relative to this file.
+# The HOT1 storage daemon inside the e2e container. Paths are relative to this file.
 self:
   daemon_id: hot1
   role: storage
