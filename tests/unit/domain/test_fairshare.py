@@ -73,3 +73,15 @@ class TestCharging:
 
     def test_points_never_go_below_zero(self) -> None:
         assert with_points(account(1.0), -10.0, T0, HALF_LIFE).points == 0.0
+
+
+def test_asking_about_nobody_is_not_a_query() -> None:
+    """The scheduler calls this with whatever is queued, which is often nothing."""
+    import asyncio
+
+    from stashd.services.fairshare import accounts_for
+
+    async def ask() -> dict[str, FairShareAccount]:
+        return await accounts_for(None, [], None, HALF_LIFE)  # type: ignore[arg-type]
+
+    assert asyncio.run(ask()) == {}
