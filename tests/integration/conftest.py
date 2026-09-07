@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from stashd.api.app import create_app
 from stashd.auth.fake import FakeAuthProvider
 from stashd.auth.token import TokenAuthProvider
-from stashd.clients.transfers import ProbeResult, StartedTask
+from stashd.clients.transfers import ProbeResult, StartedTask, TaskState
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig
 from stashd.db import create_engine, session_factory
@@ -139,6 +139,8 @@ class FakeDispatcher:
         self.started: list[dict[str, Any]] = []
         self.fail_start: Exception | None = None
         self.fail_start_once: Exception | None = None
+        self.task_states: dict[str, dict[str, Any]] = {}
+        self.fail_task_state = False
 
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult:
         return ProbeResult(
@@ -148,6 +150,22 @@ class FakeDispatcher:
             bytes_total=self.bytes_total,
             file_count=self.file_count,
             complete=True,
+        )
+
+    async def task_state(self, storage_id: str, task_id: str) -> TaskState:
+        from stashd.clients.filesets import DaemonUnavailable
+
+        if self.fail_task_state:
+            raise DaemonUnavailable(f"{storage_id} is unreachable", daemon="hot1")
+        found = self.task_states.get(task_id)
+        if found is None:
+            raise DaemonUnavailable(f"no task {task_id}", daemon="hot1")
+        return TaskState(
+            state=str(found["state"]),
+            bytes_done=int(found.get("bytes_done", 0)),
+            files_done=int(found.get("files_done", 0)),
+            failure=found.get("failure"),
+            message=str(found.get("message", "")),
         )
 
     async def prepare(
@@ -178,6 +196,8 @@ class FakeDispatcher:
                 "transfer_id": transfer_id,
                 "source_path": source_path,
                 "target": target.path,
+                "target_host": target.host,
+                "target_user": target.user,
                 "bwlimit_bytes_per_s": bwlimit_bytes_per_s,
                 "delete": delete,
             }

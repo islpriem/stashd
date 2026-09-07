@@ -36,6 +36,7 @@ from stashd.domain.clock import Clock, SystemClock
 from stashd.drivers.base import StorageDriver
 from stashd.scheduler.loop import schedule_once
 from stashd.schemas.errors import ErrorEnvelope
+from stashd.services.reconcile import reconcile
 from stashd.tasks.runner import TaskRunner
 
 logger = structlog.get_logger()
@@ -119,6 +120,19 @@ async def refresh_cluster_config(app: FastAPI) -> bool:
     return changed
 
 
+async def reconcile_transfers(app: FastAPI) -> int:
+    """What the daemons say, adopted before anything new is scheduled."""
+    sessions = app.state.sessions
+    dispatcher = app.state.dispatcher
+    cluster = app.state.cluster
+    if sessions is None or dispatcher is None or cluster is None:
+        return 0
+    async with sessions() as session:
+        return await reconcile(
+            session, cluster=cluster, dispatcher=dispatcher, clock=app.state.clock
+        )
+
+
 async def schedule(app: FastAPI) -> int:
     """One scheduler pass. Returns how many transfers it started."""
     sessions = app.state.sessions
@@ -168,6 +182,9 @@ async def background(app: FastAPI) -> AsyncIterator[None]:
     plan: RefreshPlan | None = app.state.refresh
     if app.state.registrar is not None:
         await announce(app)
+    if app.state.schedule_every is not None:
+        with suppress(Exception):  # a restart must start, whatever the daemons are doing
+            await reconcile_transfers(app)
     if plan is not None:
         tasks.append(asyncio.create_task(_refresh_loop(app, plan)))
     if app.state.schedule_every is not None:
