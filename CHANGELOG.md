@@ -95,6 +95,11 @@
   `daemon_shutdown` are now failure classes, so a deployment can list them in
   `transfer.retries.retry_on`.
 
+- `DELETE /transfers/{id}` cancels: queued work simply stops being offered, work a
+  daemon holds is killed there, and either way the fileset is left FAILED with whatever
+  arrived and its reservation held. A daemon that cannot be reached does not leave the
+  controller believing the transfer still runs.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,

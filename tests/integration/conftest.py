@@ -141,6 +141,8 @@ class FakeDispatcher:
         self.fail_start_once: Exception | None = None
         self.task_states: dict[str, dict[str, Any]] = {}
         self.fail_task_state = False
+        self.aborted: list[tuple[str, str]] = []
+        self.fail_abort: Exception | None = None
 
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult:
         return ProbeResult(
@@ -167,6 +169,11 @@ class FakeDispatcher:
             failure=found.get("failure"),
             message=str(found.get("message", "")),
         )
+
+    async def abort(self, storage_id: str, task_id: str) -> None:
+        if self.fail_abort is not None:
+            raise self.fail_abort
+        self.aborted.append((storage_id, task_id))
 
     async def prepare(
         self, storage_id: str, owner: Owner, name: str, allocation_bytes: int

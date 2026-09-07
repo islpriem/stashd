@@ -23,9 +23,9 @@ from stashd.schemas.transfers import (
     Transfer,
     Transfers,
 )
+from stashd.services import cancel, warm
 from stashd.services import transfers as service
 from stashd.services import transfers_release as release
-from stashd.services import warm
 
 router = APIRouter()
 
@@ -160,3 +160,25 @@ async def _warm(
         name=body.target.fileset,
     )
     return to_wire(submitted)
+
+
+@router.delete("/transfers/{transfer_id}")
+async def cancel_transfer(
+    caller: Caller,
+    session: Session,
+    cluster: Cluster,
+    clock: Ticking,
+    request: Request,
+    transfer_id: int,
+) -> Transfer:
+    """Stop a transfer. What already arrived stays, for its owner to deal with."""
+    cancelled = await cancel.cancel_transfer(
+        session,
+        cluster=cluster,
+        dispatcher=transfer_dispatcher(request),
+        clock=clock,
+        actor=caller,
+        is_admin=caller_is_admin(caller, cluster),
+        transfer_id=transfer_id,
+    )
+    return to_wire(cancelled)
