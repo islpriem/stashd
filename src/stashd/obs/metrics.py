@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 import sqlalchemy as sa
-from prometheus_client import CollectorRegistry, Counter, Gauge, generate_latest
+from prometheus_client import CollectorRegistry, Gauge, generate_latest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stashd.config.cluster import ClusterConfig
@@ -27,14 +27,19 @@ async def render(
     session: AsyncSession, *, cluster: ClusterConfig, clock: Clock, unreachable_after: timedelta
 ) -> bytes:
     registry = CollectorRegistry()
-    transfers = Counter(
-        "stash_transfers",
+    # Gauges, not Counters: every family is recomputed from the database per scrape, so
+    # a counter's _created timestamp would say nothing.
+    transfers = Gauge(
+        "stash_transfers_total",
         "Transfers by kind, state and route.",
         ["kind", "state", "route"],
         registry=registry,
     )
-    moved = Counter(
-        "stash_transfer_bytes", "Bytes transferred, by route.", ["route"], registry=registry
+    moved = Gauge(
+        "stash_transfer_bytes_total",
+        "Bytes transferred, by route.",
+        ["route"],
+        registry=registry,
     )
     duration = _summary(registry, "stash_transfer_duration_seconds", "Time spent running.")
     waited = _summary(registry, "stash_queue_wait_seconds", "Time spent waiting to start.")
@@ -98,8 +103,8 @@ def _summary(registry: CollectorRegistry, name: str, help_text: str) -> Summary:
 
 async def _transfers(
     session: AsyncSession,
-    transfers: Counter,
-    moved: Counter,
+    transfers: Gauge,
+    moved: Gauge,
     duration: "Summary",
     waited: "Summary",
     depth: Gauge,

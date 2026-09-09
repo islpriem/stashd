@@ -171,3 +171,13 @@ class TestMetrics:
 
         assert "stash_transfers_total" in text
         assert sample(text, "stash_storage_allocated_bytes")['{storage="LOC2HOT"}'] == 0.0
+
+    async def test_a_snapshot_carries_no_counter_creation_timestamps(
+        self, api: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        """Every family is recomputed per scrape, so a _created series says nothing."""
+        await seed(session)
+
+        text = (await api.get(METRICS)).text
+
+        assert "_created" not in text
