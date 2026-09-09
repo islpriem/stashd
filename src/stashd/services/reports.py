@@ -16,7 +16,7 @@ from stashd.config.cluster import ClusterConfig
 from stashd.domain.errors import ErrorCode, StashError
 from stashd.domain.filesets import FilesetState
 from stashd.domain.transfers import TransferState
-from stashd.models import Fileset, Transfer
+from stashd.models import Fileset, Transfer, TransferStat
 from stashd.services import allocations
 
 TERMINAL = (TransferState.SUCCEEDED, TransferState.FAILED, TransferState.CANCELLED)
@@ -118,23 +118,24 @@ async def usage_report(
     totals: dict[str, dict[str, float]] = {}
     for transfer, storage_id in await session.execute(query):
         key = _key(cluster, group_by, transfer, storage_id)
-        row = totals.setdefault(
-            key, {"bytes": 0.0, "transfers": 0.0, "succeeded": 0.0, "seconds": 0.0}
-        )
+        row = _bucket(totals, key)
         row["bytes"] += transfer.bytes_done
         row["transfers"] += 1
         if transfer.state is TransferState.SUCCEEDED:
             row["succeeded"] += 1
         if transfer.started_at is not None:
-            waits.setdefault(key, []).append(
-                (transfer.started_at - transfer.submitted_at).total_seconds()
-            )
+            waited = (transfer.started_at - transfer.submitted_at).total_seconds()
+            waits.setdefault(key, []).append(waited)
+            row["waited"] += waited
+            row["counted_waits"] += 1
             if transfer.finished_at is not None:
                 row["seconds"] += (transfer.finished_at - transfer.started_at).total_seconds()
 
+    await _add_rolled_up(session, cluster, group_by, totals, since, until)
+
     report = []
     for key, row in sorted(totals.items()):
-        waited = waits.get(key, [])
+        seen = waits.get(key, [])
         report.append(
             UsageGroup(
                 key=key,
@@ -142,14 +143,70 @@ async def usage_report(
                 transfers=int(row["transfers"]),
                 succeeded=int(row["succeeded"]),
                 success_rate=row["succeeded"] / row["transfers"] if row["transfers"] else 0.0,
-                mean_queue_wait_seconds=sum(waited) / len(waited) if waited else 0.0,
-                p95_queue_wait_seconds=_percentile(waited, 0.95),
+                mean_queue_wait_seconds=row["waited"] / row["counted_waits"]
+                if row["counted_waits"]
+                else 0.0,
+                # Only unpruned transfers keep their individual waits; a rolled-up day
+                # carries the sum, not the distribution.
+                p95_queue_wait_seconds=_percentile(seen, 0.95),
                 mean_throughput_bytes_per_s=row["bytes"] / row["seconds"]
                 if row["seconds"]
                 else 0.0,
             )
         )
     return report
+
+
+def _bucket(totals: dict[str, dict[str, float]], key: str) -> dict[str, float]:
+    return totals.setdefault(
+        key,
+        {
+            "bytes": 0.0,
+            "transfers": 0.0,
+            "succeeded": 0.0,
+            "seconds": 0.0,
+            "waited": 0.0,
+            "counted_waits": 0.0,
+        },
+    )
+
+
+async def _add_rolled_up(
+    session: AsyncSession,
+    cluster: ClusterConfig,
+    group_by: GroupBy,
+    totals: dict[str, dict[str, float]],
+    since: datetime | None,
+    until: datetime | None,
+) -> None:
+    """What pruning kept, added to what is still in the transfers table."""
+    query = sa.select(TransferStat)
+    if since is not None:
+        query = query.where(TransferStat.day >= since.date())
+    if until is not None:
+        query = query.where(TransferStat.day < until.date())
+    for stat in await session.scalars(query):
+        key = _rolled_up_key(cluster, group_by, stat)
+        row = _bucket(totals, key)
+        row["bytes"] += stat.bytes_transferred
+        row["transfers"] += stat.transfers
+        row["succeeded"] += stat.succeeded
+        row["seconds"] += stat.running_seconds
+        row["waited"] += stat.queue_wait_seconds
+        row["counted_waits"] += stat.transfers
+
+
+def _rolled_up_key(cluster: ClusterConfig, group_by: GroupBy, stat: TransferStat) -> str:
+    if group_by is GroupBy.USER:
+        return stat.user
+    if group_by is GroupBy.ROUTE:
+        return stat.route
+    if group_by is GroupBy.STORAGE:
+        return stat.storage_id
+    try:
+        return str(cluster.storage(stat.storage_id).location)
+    except KeyError:  # a storage that has left the config still has history
+        return stat.storage_id
 
 
 async def allocation_report(

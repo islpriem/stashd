@@ -4,6 +4,7 @@ import asyncio
 import signal
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -39,10 +40,13 @@ from stashd.drivers.base import StorageDriver
 from stashd.scheduler.loop import schedule_once
 from stashd.schemas.errors import ErrorEnvelope
 from stashd.services.reconcile import reconcile
+from stashd.services.retention import prune
 from stashd.services.usage import reconcile_storage
 from stashd.tasks.runner import TaskRunner
 
 logger = structlog.get_logger()
+
+PRUNE_EVERY = timedelta(hours=1)
 
 API_PREFIX = "/api/v1"
 INTERNAL_PREFIX = "/internal/v1"
@@ -182,6 +186,25 @@ async def _usage_loop(  # pragma: no cover - a loop
             logger.exception("usage.failed", storage_id=storage_id)
 
 
+async def prune_old_rows(app: FastAPI) -> int:
+    """Drop what is past its retention, keeping the report numbers."""
+    sessions = app.state.sessions
+    cluster = app.state.cluster
+    if sessions is None or cluster is None:
+        return 0
+    async with sessions() as session:
+        return await prune(session, cluster=cluster, clock=app.state.clock)
+
+
+async def _retention_loop(app: FastAPI) -> None:  # pragma: no cover - a loop
+    while True:
+        await asyncio.sleep(PRUNE_EVERY.total_seconds())
+        try:
+            await prune_old_rows(app)
+        except Exception:
+            logger.exception("retention.failed")
+
+
 async def _scheduler_loop(app: FastAPI, interval: float) -> None:  # pragma: no cover - a loop
     while True:
         await asyncio.sleep(interval)
@@ -235,6 +258,8 @@ async def background(app: FastAPI) -> AsyncIterator[None]:
         tasks.append(asyncio.create_task(_refresh_loop(app, plan)))
     if app.state.schedule_every is not None:
         tasks.append(asyncio.create_task(_scheduler_loop(app, app.state.schedule_every)))
+    if app.state.sessions is not None and app.state.cluster is not None:
+        tasks.append(asyncio.create_task(_retention_loop(app)))
     if app.state.usage is not None and app.state.cluster is not None:
         tasks.extend(
             asyncio.create_task(
