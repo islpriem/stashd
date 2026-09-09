@@ -28,6 +28,7 @@ storages:
     fill_limit: 0.95
     default_user_allocation_limit: 2Gi
     daemon: loc2hot
+    usage_reconcile_interval: 1m
 limits:
   user_total_cache_allocation: 4Gi
   max_filesets_per_user: 10

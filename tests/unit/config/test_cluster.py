@@ -329,3 +329,27 @@ class TestRejection:
 
         with pytest.raises(ConfigError, match="mapping"):
             load_cluster_config(path)
+
+
+class TestUsageReconciliation:
+    def test_the_interval_is_per_storage(self, valid_cluster: Any, write_cluster: Any) -> None:
+        valid_cluster["storages"][1]["usage_reconcile_interval"] = "30m"
+
+        config = load_cluster_config(write_cluster(valid_cluster))
+
+        assert config.storage("LOC2HOT").usage_reconcile_interval == timedelta(minutes=30)
+
+    def test_a_storage_that_says_nothing_gets_the_default(
+        self, valid_cluster: Any, write_cluster: Any
+    ) -> None:
+        config = load_cluster_config(write_cluster(valid_cluster))
+
+        assert config.storage("HOT1").usage_reconcile_interval == timedelta(minutes=15)
+
+    def test_an_interval_of_zero_is_refused(
+        self, valid_cluster: Any, write_cluster: Any
+    ) -> None:
+        valid_cluster["storages"][1]["usage_reconcile_interval"] = "0s"
+
+        with pytest.raises(ConfigError):
+            load_cluster_config(write_cluster(valid_cluster))

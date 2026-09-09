@@ -24,6 +24,7 @@ from pydantic import (
     Field,
     StringConstraints,
     ValidationError,
+    field_validator,
     model_validator,
 )
 
@@ -150,7 +151,16 @@ class Storage(Section):
     )
     daemon: DaemonId
     fileset_mode: FilesetMode = 0o700
+    # How often the daemon is asked what the filesets here actually hold.
+    usage_reconcile_interval: Duration = timedelta(minutes=15)
     enabled: bool = True
+
+    @field_validator("usage_reconcile_interval")
+    @classmethod
+    def _interval_is_positive(cls, value: timedelta) -> timedelta:
+        if value <= timedelta(0):
+            raise ValueError("usage_reconcile_interval must be positive")
+        return value
 
     @model_validator(mode="before")
     @classmethod
