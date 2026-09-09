@@ -26,8 +26,8 @@ from stashd.domain.scheduling import (
 from stashd.domain.storage import Owner
 from stashd.domain.transfers import TransferKind, TransferState, next_transfer_state
 from stashd.engines.base import TransferEndpoint
-from stashd.models import Fileset, StorageState, Transfer
-from stashd.services import fairshare
+from stashd.models import Fileset, Transfer
+from stashd.services import drain, fairshare
 
 logger = structlog.get_logger()
 
@@ -68,7 +68,7 @@ async def schedule_once(
         await _load(session),
         _concurrency(cluster),
         _bandwidth(cluster),
-        drained=await _drained(session),
+        drained=await drain.drained_storages(session),
     )
 
     started: list[Dispatch] = []
@@ -132,13 +132,6 @@ async def _load(session: AsyncSession) -> Load:
         if transfer.kind.moves_data:
             load.per_route[transfer.route] = load.per_route.get(transfer.route, 0) + 1
     return load
-
-
-async def _drained(session: AsyncSession) -> frozenset[str]:
-    rows = await session.scalars(
-        sa.select(StorageState.storage_id).where(StorageState.drained.is_(True))
-    )
-    return frozenset(rows)
 
 
 def _concurrency(cluster: ClusterConfig) -> ConcurrencyLimits:

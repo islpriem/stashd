@@ -32,7 +32,7 @@ from stashd.domain.identity import Principal
 from stashd.domain.references import validate_fileset_name
 from stashd.domain.storage import FilesetLocation, Owner
 from stashd.models import Fileset
-from stashd.services import allocations, audit
+from stashd.services import allocations, audit, drain
 
 
 async def list_filesets(
@@ -135,7 +135,7 @@ async def admission_state(
         user_fileset_count=int(fileset_count or 0),
         max_filesets_per_user=cluster.limits.max_filesets_per_user,
         over_allocation_filesets=tuple(offenders),
-        storage_drained=False,
+        storage_drained=storage_id in await drain.drained_storages(session),
     )
 
 
