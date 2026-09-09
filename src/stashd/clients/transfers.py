@@ -38,6 +38,7 @@ class ProbeResult:
     bytes_total: int
     file_count: int
     complete: bool
+    writable: bool = False
 
 
 class TransferDispatcher(Protocol):
@@ -80,6 +81,7 @@ class HttpTransferDispatcher:
             exists=bool(body["exists"]),
             is_dir=bool(body["is_dir"]),
             readable=bool(body["readable"]),
+            writable=bool(body.get("writable", False)),
             bytes_total=int(body["bytes_total"]),
             file_count=int(body["file_count"]),
             complete=bool(body["complete"]),

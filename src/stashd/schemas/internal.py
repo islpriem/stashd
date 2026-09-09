@@ -65,6 +65,7 @@ class ProbeResult(Wire):
     exists: bool
     is_dir: bool
     readable: bool
+    writable: bool = False
     bytes_total: int
     file_count: int
     complete: bool
