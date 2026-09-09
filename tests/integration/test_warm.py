@@ -275,3 +275,61 @@ class TestChannels:
 
         assert response.status_code == 201
         assert response.json()["route"] == "HOT1->LOC2HOT"
+
+
+class TestWhatACachedFilesetCarries:
+    async def test_a_warm_creates_it_without_being_asked_to(
+        self, api: httpx2.AsyncClient
+    ) -> None:
+        """No fileset create call: warming a name that is free makes it."""
+        assert (await api.get("/filesets")).json()["filesets"] == []
+
+        await api.post("/transfers", json=warm())
+
+        filesets = (await api.get("/filesets")).json()["filesets"]
+        assert [(row["name"], row["kind"]) for row in filesets] == [("mydir", "cached")]
+
+    async def test_it_carries_where_it_came_from(
+        self, api: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        await api.post("/transfers", json=warm())
+
+        fileset = (await api.get("/filesets")).json()["filesets"][0]
+
+        assert fileset["source"] == "HOT1:/myuser/mydirectory"
+        row = await session.get(Fileset, fileset["id"])
+        assert row is not None
+        assert (row.source_storage_id, row.source_path) == ("HOT1", "/myuser/mydirectory")
+
+    async def test_it_still_carries_it_after_it_is_released(
+        self, api: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        """History says what the fileset held, long after the directory is gone."""
+        await api.post("/transfers", json=warm())
+        fileset_id = (await api.get("/filesets")).json()["filesets"][0]["id"]
+        row = await session.get(Fileset, fileset_id)
+        assert row is not None
+        row.state = FilesetState.READY
+        await session.commit()
+
+        await api.post(
+            "/transfers",
+            json={"kind": "release", "target": {"storage": "LOC2HOT", "fileset": "mydir"}},
+        )
+
+        session.expire_all()
+        row = await session.get(Fileset, fileset_id)
+        assert row is not None
+        assert row.state is FilesetState.RELEASED
+        assert row.source_storage_id == "HOT1"
+        assert row.source_path == "/myuser/mydirectory"
+
+    async def test_an_output_fileset_carries_no_source(self, api: httpx2.AsyncClient) -> None:
+        await api.post(
+            "/filesets", json={"storage": "LOC2HOT", "name": "results", "size_bytes": 1024}
+        )
+
+        fileset = (await api.get("/filesets")).json()["filesets"][0]
+
+        assert fileset["kind"] == "output"
+        assert fileset["source"] is None
