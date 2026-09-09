@@ -47,9 +47,11 @@ class PathRef(Wire):
 
 
 class SubmitRelease(Wire):
+    """Deleting a fileset. An output fileset needs ``discard`` to say so."""
+
     kind: Literal[TransferKind.RELEASE]
     target: FilesetRef
-    force: bool = False
+    discard: bool = False
     user: str | None = None
 
 
@@ -65,7 +67,18 @@ class SubmitWarm(Wire):
     user: str | None = None
 
 
-Submit = Annotated[SubmitRelease | SubmitWarm, Field(discriminator="kind")]
+class SubmitFlush(Wire):
+    """A fileset written back out to a source storage."""
+
+    kind: Literal[TransferKind.FLUSH]
+    source: FilesetRef
+    target: PathRef
+    keep: bool = False
+    dry_run: bool = False
+    user: str | None = None
+
+
+Submit = Annotated[SubmitFlush | SubmitRelease | SubmitWarm, Field(discriminator="kind")]
 
 
 class Preflight(Wire):

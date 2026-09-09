@@ -133,6 +133,8 @@ class FakeDispatcher:
     def __init__(self) -> None:
         self.exists = True
         self.readable = True
+        self.writable = True
+        self.is_dir = True
         self.bytes_total = 20 * 1024**3
         self.file_count = 12043
         self.prepared: list[tuple[str, str]] = []
@@ -147,8 +149,9 @@ class FakeDispatcher:
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult:
         return ProbeResult(
             exists=self.exists,
-            is_dir=True,
+            is_dir=self.is_dir,
             readable=self.readable,
+            writable=self.writable,
             bytes_total=self.bytes_total,
             file_count=self.file_count,
             complete=True,

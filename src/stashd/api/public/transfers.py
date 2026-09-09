@@ -19,11 +19,12 @@ from stashd.models import Transfer as TransferRow
 from stashd.schemas.transfers import (
     Preflight,
     Submit,
+    SubmitFlush,
     SubmitWarm,
     Transfer,
     Transfers,
 )
-from stashd.services import cancel, warm
+from stashd.services import cancel, flush, warm
 from stashd.services import transfers as service
 from stashd.services import transfers_release as release
 
@@ -95,9 +96,11 @@ async def submit_transfer(
     clock: Ticking,
     body: Submit,
 ) -> Transfer | Preflight:
-    """Submit a warm or a release. A release runs synchronously."""
+    """Submit a warm, a flush or a release. A release runs synchronously."""
     if isinstance(body, SubmitWarm):
         return await _warm(request, caller, session, cluster, clock, body)
+    if isinstance(body, SubmitFlush):
+        return await _flush(request, caller, session, cluster, clock, body)
     released = await release.release_fileset(
         session,
         store=store,
@@ -107,6 +110,7 @@ async def submit_transfer(
         subject_user=body.user or caller.username,
         storage_id=body.target.storage,
         name=body.target.fileset,
+        discard=body.discard,
     )
     return to_wire(released)
 
@@ -160,6 +164,67 @@ async def _warm(
         source_path=body.source.path,
         target_storage_id=body.target.storage,
         name=body.target.fileset,
+    )
+    return to_wire(submitted)
+
+
+async def _flush(
+    request: Request,
+    caller: Caller,
+    session: Session,
+    cluster: Cluster,
+    clock: Ticking,
+    body: SubmitFlush,
+) -> Transfer | Preflight:
+    owner = subject_owner(request, caller, body.user)
+    plan = await flush.preflight(
+        session,
+        cluster=cluster,
+        dispatcher=transfer_dispatcher(request),
+        actor=caller,
+        owner=owner,
+        is_admin=caller_is_admin(caller, cluster),
+        fileset_storage_id=body.source.storage,
+        name=body.source.fileset,
+        target_storage_id=body.target.storage,
+        target_path=body.target.path,
+    )
+    if body.dry_run:
+        start, duration = warm.eta(
+            cluster,
+            warm.Preflight(
+                source_reference=plan.source_reference,
+                target_reference=plan.target_reference,
+                path=plan.path,
+                route=plan.route,
+                bytes_total=plan.bytes_total,
+                file_count=plan.file_count,
+                allocation_bytes=0,
+                refresh=False,
+                queued_ahead_bytes=0,
+            ),
+        )
+        return Preflight(
+            kind=TransferKind.FLUSH,
+            source=plan.source_reference,
+            target=plan.target_reference,
+            path=plan.path,
+            route=str(plan.route),
+            bytes_total=plan.bytes_total,
+            file_count=plan.file_count,
+            allocation_bytes=0,
+            refresh=False,
+            estimated_start_seconds=start,
+            estimated_duration_seconds=duration,
+        )
+    submitted = await flush.submit_flush(
+        session,
+        cluster=cluster,
+        clock=clock,
+        actor=caller,
+        owner=owner,
+        plan=plan,
+        keep=body.keep,
     )
     return to_wire(submitted)
 
