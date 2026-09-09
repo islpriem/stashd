@@ -1,6 +1,70 @@
 {
   "components": {
     "schemas": {
+      "AllocationReport": {
+        "additionalProperties": false,
+        "properties": {
+          "offenders": {
+            "items": {
+              "$ref": "#/components/schemas/Offender"
+            },
+            "title": "Offenders",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows",
+          "offenders"
+        ],
+        "title": "AllocationReport",
+        "type": "object"
+      },
+      "AllocationRow": {
+        "additionalProperties": false,
+        "properties": {
+          "allocated_bytes": {
+            "title": "Allocated Bytes",
+            "type": "integer"
+          },
+          "filesets": {
+            "title": "Filesets",
+            "type": "integer"
+          },
+          "limit_bytes": {
+            "title": "Limit Bytes",
+            "type": "integer"
+          },
+          "storage_id": {
+            "title": "Storage Id",
+            "type": "string"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "storage_id",
+          "allocated_bytes",
+          "used_bytes",
+          "filesets",
+          "limit_bytes"
+        ],
+        "title": "AllocationRow",
+        "type": "object"
+      },
       "AllocationTotals": {
         "additionalProperties": false,
         "properties": {
@@ -531,6 +595,40 @@
           "locations"
         ],
         "title": "Locations",
+        "type": "object"
+      },
+      "Offender": {
+        "additionalProperties": false,
+        "properties": {
+          "allocated_bytes": {
+            "title": "Allocated Bytes",
+            "type": "integer"
+          },
+          "fileset": {
+            "title": "Fileset",
+            "type": "string"
+          },
+          "storage_id": {
+            "title": "Storage Id",
+            "type": "string"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "storage_id",
+          "fileset",
+          "allocated_bytes",
+          "used_bytes"
+        ],
+        "title": "Offender",
         "type": "object"
       },
       "PathRef": {
@@ -1188,6 +1286,101 @@
           "next_cursor"
         ],
         "title": "Transfers",
+        "type": "object"
+      },
+      "UsageGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes_transferred": {
+            "title": "Bytes Transferred",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "mean_queue_wait_seconds": {
+            "title": "Mean Queue Wait Seconds",
+            "type": "number"
+          },
+          "mean_throughput_bytes_per_s": {
+            "title": "Mean Throughput Bytes Per S",
+            "type": "number"
+          },
+          "p95_queue_wait_seconds": {
+            "title": "P95 Queue Wait Seconds",
+            "type": "number"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "success_rate": {
+            "title": "Success Rate",
+            "type": "number"
+          },
+          "transfers": {
+            "title": "Transfers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "bytes_transferred",
+          "transfers",
+          "succeeded",
+          "success_rate",
+          "mean_queue_wait_seconds",
+          "p95_queue_wait_seconds",
+          "mean_throughput_bytes_per_s"
+        ],
+        "title": "UsageGroup",
+        "type": "object"
+      },
+      "UsageReport": {
+        "additionalProperties": false,
+        "properties": {
+          "group_by": {
+            "title": "Group By",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/UsageGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "group_by",
+          "since",
+          "until",
+          "groups"
+        ],
+        "title": "UsageReport",
         "type": "object"
       },
       "ValidationError": {
@@ -2567,6 +2760,240 @@
           }
         },
         "summary": "Locations"
+      }
+    },
+    "/api/v1/reports/allocation": {
+      "get": {
+        "description": "Who holds what, and whose filesets are past what they reserved.",
+        "operationId": "allocation_api_v1_reports_allocation_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request could not be understood."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid credential."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not permitted."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Refused by a rule: a limit, a state, or a conflict."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected failure."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A storage or daemon is unavailable."
+          }
+        },
+        "summary": "Allocation"
+      }
+    },
+    "/api/v1/reports/usage": {
+      "get": {
+        "description": "What was moved in a window, grouped as asked.",
+        "operationId": "usage_api_v1_reports_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "user",
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request could not be understood."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid credential."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not permitted."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Refused by a rule: a limit, a state, or a conflict."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected failure."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A storage or daemon is unavailable."
+          }
+        },
+        "summary": "Usage"
       }
     },
     "/api/v1/storages": {

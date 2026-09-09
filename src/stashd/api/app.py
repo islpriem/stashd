@@ -21,7 +21,7 @@ from stashd.api.internal import filesets as internal_filesets
 from stashd.api.internal import register as internal_register
 from stashd.api.internal import tasks as internal_tasks
 from stashd.api.middleware import RequestContextMiddleware
-from stashd.api.public import allocations, filesets, topology, transfers
+from stashd.api.public import allocations, filesets, reports, topology, transfers
 from stashd.auth.owners import OwnerLookup, SystemOwnerLookup
 from stashd.auth.provider import AuthProvider
 from stashd.auth.token import TokenAuthProvider
@@ -71,6 +71,7 @@ def public_router() -> APIRouter:
     router.include_router(filesets.router)
     router.include_router(transfers.router)
     router.include_router(allocations.router)
+    router.include_router(reports.router)
     return router
 
 
