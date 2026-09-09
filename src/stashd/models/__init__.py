@@ -6,6 +6,7 @@ from stashd.models.daemon import Daemon
 from stashd.models.fairshare import FairShareAccountRow
 from stashd.models.fileset import Fileset
 from stashd.models.limits import UserLimit
+from stashd.models.stats import TransferStat
 from stashd.models.storage_state import StorageState
 from stashd.models.transfer import Transfer
 
@@ -17,5 +18,6 @@ __all__ = [
     "Fileset",
     "StorageState",
     "Transfer",
+    "TransferStat",
     "UserLimit",
 ]
