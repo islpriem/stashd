@@ -412,8 +412,12 @@ class TestDispatchingAFlush:
         assert len(dispatcher.started) == 1
         started = dispatcher.started[0]
         assert started["storage_id"] == "LOC2HOT", "the daemon that holds the fileset"
-        assert started["source_path"] == "/fake/cache/mmustermann/results"
-        assert started["target"] == "/mmustermann/out"
+        assert started["source_path"] == "/mmustermann/results", (
+            "storage-relative: the executing daemon resolves it against its own root"
+        )
+        assert started["target"] == "/fake/source/mmustermann/out", (
+            "resolved by the daemon that owns the target storage"
+        )
         assert started["delete"] is False, "a flush never deletes at the target"
 
     async def test_a_flush_to_another_site_goes_over_ssh(

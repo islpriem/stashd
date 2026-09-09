@@ -32,6 +32,8 @@ class StartedTask:
 
 @dataclass(frozen=True, slots=True)
 class ProbeResult:
+    # Where the daemon says that path really is, inside its storage.
+    path: str
     exists: bool
     is_dir: bool
     readable: bool
@@ -80,6 +82,7 @@ class HttpTransferDispatcher:
         return ProbeResult(
             exists=bool(body["exists"]),
             is_dir=bool(body["is_dir"]),
+            path=str(body["path"]),
             readable=bool(body["readable"]),
             writable=bool(body.get("writable", False)),
             bytes_total=int(body["bytes_total"]),

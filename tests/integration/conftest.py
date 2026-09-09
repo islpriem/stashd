@@ -138,6 +138,7 @@ class FakeDispatcher:
         self.bytes_total = 20 * 1024**3
         self.file_count = 12043
         self.prepared: list[tuple[str, str]] = []
+        self.probed: list[tuple[str, str]] = []
         self.started: list[dict[str, Any]] = []
         self.fail_start: Exception | None = None
         self.fail_start_once: Exception | None = None
@@ -147,7 +148,9 @@ class FakeDispatcher:
         self.fail_abort: Exception | None = None
 
     async def probe(self, storage_id: str, owner: Owner, path: str) -> ProbeResult:
+        self.probed.append((storage_id, path))
         return ProbeResult(
+            path=f"/fake/source{path}",
             exists=self.exists,
             is_dir=self.is_dir,
             readable=self.readable,

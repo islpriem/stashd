@@ -169,8 +169,20 @@ async def _start(
     owner = Owner(user=fileset.owner_user, uid=fileset.owner_uid, gid=fileset.owner_gid)
     if transfer.kind is TransferKind.FLUSH:
         # Out of the fileset: the daemon holding it pushes to the source storage.
-        source_path = fileset.path
-        target = _endpoint(cluster, source_storage, target_storage, peer_path, owner)
+        # Both ends are storage-relative until the daemon that owns them says otherwise,
+        # so the target is resolved where it lives, right before the data moves.
+        source_path = f"/{fileset.owner_user}/{fileset.name}"
+        try:
+            resolved = await dispatcher.probe(target_storage, owner, peer_path)
+        except StashError as refusal:
+            logger.warning(
+                "dispatch.refused",
+                transfer_id=transfer.id,
+                code=str(refusal.code),
+                reason=str(refusal),
+            )
+            return False
+        target = _endpoint(cluster, source_storage, target_storage, resolved.path, owner)
     else:
         source_path = peer_path
         target = _endpoint(cluster, source_storage, fileset.storage_id, fileset.path, owner)

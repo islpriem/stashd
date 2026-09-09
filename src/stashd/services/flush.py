@@ -101,7 +101,7 @@ async def preflight(
         fileset=fileset,
         source_reference=f"{fileset_storage_id}:{name}",
         target_reference=reference,
-        path=target.path if hasattr(target, "path") else target_path,
+        path=target.path,
         route=Route(fileset_storage_id, target_storage_id),
         bytes_total=measured.bytes_total or fileset.used_bytes,
         file_count=measured.file_count or (fileset.file_count or 0),
