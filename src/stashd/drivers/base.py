@@ -8,7 +8,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from stashd.domain.errors import ErrorCode, StashError
-from stashd.domain.storage import FilesetLocation, Owner, PathStat, ResolvedPath, SizeReport
+from stashd.domain.storage import (
+    FilesetLocation,
+    Owner,
+    PathStat,
+    ResolvedPath,
+    SizeReport,
+    UsageReport,
+)
 from stashd.engines.base import TransferEndpoint
 
 
@@ -58,6 +65,14 @@ class StorageDriver(Protocol):
 
     def set_fileset_quota(self, location: FilesetLocation, allocation: int) -> None:
         """Enforce the allocation on the storage, where the driver can."""
+        ...
+
+    def fileset_usage(self, location: FilesetLocation) -> UsageReport:
+        """What the fileset holds now. A fileset that is gone holds nothing."""
+        ...
+
+    def storage_usage(self) -> UsageReport:
+        """What the whole storage holds, for the metric that watches it."""
         ...
 
     def delete_fileset(self, location: FilesetLocation) -> None:

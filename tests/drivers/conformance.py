@@ -171,6 +171,48 @@ class DriverConformance:
         assert not found.exists
         assert not found.writable
 
+    def test_a_fileset_reports_what_it_actually_holds(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        location = driver.create_fileset(owner, "mydir", 1024)
+        self.seed_file(location, "payload")
+
+        usage = driver.fileset_usage(location)
+
+        assert usage.used_bytes > 0
+        assert usage.file_count == 1
+
+    def test_an_empty_fileset_holds_nothing(self, driver: StorageDriver, owner: Owner) -> None:
+        location = driver.create_fileset(owner, "mydir", 1024)
+
+        usage = driver.fileset_usage(location)
+
+        assert usage.file_count == 0
+
+    def test_a_fileset_that_is_gone_reports_nothing_rather_than_failing(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        location = driver.create_fileset(owner, "mydir", 1024)
+        driver.delete_fileset(location)
+
+        usage = driver.fileset_usage(location)
+
+        assert usage.used_bytes == 0
+        assert usage.file_count == 0
+
+    def test_the_storage_reports_what_it_holds_in_total(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        first = driver.create_fileset(owner, "mydir", 1024)
+        self.seed_file(first, "payload")
+        second = driver.create_fileset(owner, "other", 1024)
+        self.seed_file(second, "payload")
+
+        usage = driver.storage_usage()
+
+        assert usage.used_bytes >= driver.fileset_usage(first).used_bytes
+        assert usage.file_count >= 2
+
     def test_a_fileset_can_be_addressed_as_a_transfer_endpoint(
         self, driver: StorageDriver, owner: Owner
     ) -> None:

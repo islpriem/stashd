@@ -15,12 +15,16 @@ from stashd.domain.storage import (
     PathStat,
     ResolvedPath,
     SizeReport,
+    UsageReport,
 )
 from stashd.drivers.base import DriverError, StorageCapabilities
 from stashd.engines.base import TransferEndpoint
 from stashd.identity.base import Identity, IdentityError
+from stashd.identity.current import CurrentUserIdentity
 
 DEFAULT_MODE = 0o700
+# Storage-level accounting has no requesting user; CurrentUserIdentity ignores it.
+_DAEMON_ITSELF = Owner(user="", uid=-1, gid=-1)
 
 
 class PosixDriver:
@@ -120,6 +124,35 @@ class PosixDriver:
         `over_allocation` and blocks further allocations by that user.
         """
         del location, allocation
+
+    def fileset_usage(self, location: FilesetLocation) -> UsageReport:
+        """Measured as the owner, like everything else that touches user data."""
+        return self._usage(location.owner, location.path)
+
+    def storage_usage(self) -> UsageReport:
+        """The prefix as a whole: accounting for the storage, not for one user.
+
+        Measured as the daemon itself, since no single user owns the answer. It reads
+        directory sizes, never file contents.
+        """
+        return self._usage(_DAEMON_ITSELF, str(self._prefix), identity=CurrentUserIdentity())
+
+    def _usage(self, owner: Owner, path: str, identity: Identity | None = None) -> UsageReport:
+        if not Path(path).exists():
+            return UsageReport(used_bytes=0, file_count=0)
+        run = (identity or self._identity).run
+        try:
+            usage = run(owner, ["du", "-sk", path])
+            listing = run(owner, ["find", path, "-type", "f"])
+        except IdentityError:
+            return UsageReport(used_bytes=0, file_count=0)
+        if not usage.ok:
+            return UsageReport(used_bytes=0, file_count=0)
+        kibibytes = int(usage.stdout.split(maxsplit=1)[0] or 0)
+        return UsageReport(
+            used_bytes=kibibytes * 1024,
+            file_count=len([line for line in listing.stdout.splitlines() if line]),
+        )
 
     def delete_fileset(self, location: FilesetLocation) -> None:
         self._check_inside_prefix(location)

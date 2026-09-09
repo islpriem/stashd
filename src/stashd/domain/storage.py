@@ -22,8 +22,10 @@ class FilesetLocation:
 
 @dataclass(frozen=True, slots=True)
 class UsageReport:
+    """What a fileset or a storage actually holds, as the filesystem says."""
+
     used_bytes: int
-    file_count: int | None = None
+    file_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

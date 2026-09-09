@@ -14,6 +14,7 @@ from stashd.domain.storage import (
     PathStat,
     ResolvedPath,
     SizeReport,
+    UsageReport,
 )
 from stashd.drivers.base import DriverError, StorageCapabilities
 from stashd.engines.base import TransferEndpoint
@@ -97,6 +98,20 @@ class FakeDriver:
         fileset = self.filesets.get(location.path)
         if fileset is not None:
             fileset.quota_bytes = allocation
+
+    def fileset_usage(self, location: FilesetLocation) -> UsageReport:
+        fileset = self.filesets.get(location.path)
+        if fileset is None:
+            return UsageReport(used_bytes=0, file_count=0)
+        return UsageReport(
+            used_bytes=sum(fileset.files.values()), file_count=len(fileset.files)
+        )
+
+    def storage_usage(self) -> UsageReport:
+        return UsageReport(
+            used_bytes=sum(sum(fileset.files.values()) for fileset in self.filesets.values()),
+            file_count=sum(len(fileset.files) for fileset in self.filesets.values()),
+        )
 
     def delete_fileset(self, location: FilesetLocation) -> None:
         self._maybe_fail("delete_fileset")
