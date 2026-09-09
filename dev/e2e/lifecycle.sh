@@ -52,7 +52,7 @@ ls -ld "/srv/stash/loc2hot/$USER_NAME/results"
 echo "--- release ---"
 as_user "curl -sS -X POST '$CONTROLLER/api/v1/transfers' \
     -H \"Authorization: Munge \$(munge -n)\" -H 'Content-Type: application/json' \
-    -d '{\"kind\": \"release\", \"target\": {\"storage\": \"LOC2HOT\", \"fileset\": \"results\"}}'"
+    -d '{\"kind\": \"release\", \"target\": {\"storage\": \"LOC2HOT\", \"fileset\": \"results\"}, \"discard\": true}'"
 echo
 echo "--- on disk after release ---"
 ls -ld "/srv/stash/loc2hot/$USER_NAME/results" 2>&1 || echo "gone"
