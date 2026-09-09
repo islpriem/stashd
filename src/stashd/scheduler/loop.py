@@ -164,10 +164,16 @@ async def _start(
     fileset = await session.get(Fileset, transfer.fileset_id)
     if fileset is None:  # pragma: no cover - a transfer always has one
         return False
-    source_storage, _ = transfer.route.split("->", 1)
-    source_path = (transfer.peer_ref or "").split(":", 1)[-1]
+    source_storage, target_storage = transfer.route.split("->", 1)
+    peer_path = (transfer.peer_ref or "").split(":", 1)[-1]
     owner = Owner(user=fileset.owner_user, uid=fileset.owner_uid, gid=fileset.owner_gid)
-    target = _endpoint(cluster, source_storage, fileset, owner)
+    if transfer.kind is TransferKind.FLUSH:
+        # Out of the fileset: the daemon holding it pushes to the source storage.
+        source_path = fileset.path
+        target = _endpoint(cluster, source_storage, target_storage, peer_path, owner)
+    else:
+        source_path = peer_path
+        target = _endpoint(cluster, source_storage, fileset.storage_id, fileset.path, owner)
     try:
         started = await dispatcher.start(
             source_storage,
@@ -176,6 +182,7 @@ async def _start(
             owner=owner,
             target=target,
             bwlimit_bytes_per_s=dispatch.bwlimit_bytes_per_s,
+            # --delete belongs to a cached-fileset refresh only; never to a flush.
             delete=transfer.kind is TransferKind.WARM
             and transfer.attempt > 0
             and _is_refresh(fileset),
@@ -197,7 +204,11 @@ async def _start(
 
 
 def _endpoint(
-    cluster: ClusterConfig, source_storage: str, fileset: Fileset, owner: Owner
+    cluster: ClusterConfig,
+    source_storage: str,
+    target_storage: str,
+    path: str,
+    owner: Owner,
 ) -> TransferEndpoint:
     """A local path when one daemon owns both ends, an ssh destination otherwise.
 
@@ -206,10 +217,10 @@ def _endpoint(
     --rsync-path, which is the other half of that open question and is not implemented.
     """
     source_daemon = cluster.daemon_for(source_storage)
-    target_daemon = cluster.daemon_for(fileset.storage_id)
+    target_daemon = cluster.daemon_for(target_storage)
     if channel_for(source_daemon.id, target_daemon.id) is Channel.LOCAL:
-        return TransferEndpoint(path=fileset.path)
-    return TransferEndpoint(path=fileset.path, host=target_daemon.host, user=owner.user)
+        return TransferEndpoint(path=path)
+    return TransferEndpoint(path=path, host=target_daemon.host, user=owner.user)
 
 
 def _is_refresh(fileset: Fileset) -> bool:

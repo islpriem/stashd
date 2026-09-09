@@ -364,3 +364,77 @@ class TestChannels:
         started = dispatcher.started[0]
         assert started["target_host"] == "stash-loc2.example.org"
         assert started["target_user"] == "mmustermann", "rsync connects as the owner"
+
+
+async def flushing(session: AsyncSession) -> int:
+    """An output fileset with a flush waiting to be dispatched."""
+    fileset = Fileset(
+        name="results",
+        owner_user="mmustermann",
+        owner_uid=1000,
+        owner_gid=1000,
+        storage_id="LOC2HOT",
+        kind=FilesetKind.OUTPUT,
+        state=FilesetState.FLUSHING,
+        path="/fake/cache/mmustermann/results",
+        allocated_bytes=4 * GIB,
+        created_at=T0,
+    )
+    session.add(fileset)
+    await session.flush()
+    transfer = Transfer(
+        kind=TransferKind.FLUSH,
+        user="mmustermann",
+        fileset_id=fileset.id,
+        peer_ref="HOT1:/mmustermann/out",
+        state=TransferState.SUBMITTED,
+        route="LOC2HOT->HOT1",
+        bytes_total=3 * GIB,
+        submitted_at=T0,
+    )
+    session.add(transfer)
+    await session.commit()
+    return int(transfer.id)
+
+
+class TestDispatchingAFlush:
+    async def test_it_goes_out_from_the_fileset_to_the_target_path(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        session: AsyncSession,
+        cluster_config: ClusterConfig,
+        dispatcher: Any,
+    ) -> None:
+        await flushing(session)
+
+        await run(sessions, cluster_config, dispatcher)
+
+        assert len(dispatcher.started) == 1
+        started = dispatcher.started[0]
+        assert started["storage_id"] == "LOC2HOT", "the daemon that holds the fileset"
+        assert started["source_path"] == "/fake/cache/mmustermann/results"
+        assert started["target"] == "/mmustermann/out"
+        assert started["delete"] is False, "a flush never deletes at the target"
+
+    async def test_a_flush_to_another_site_goes_over_ssh(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        session: AsyncSession,
+        valid_cluster: dict[str, Any],
+        write_cluster: Any,
+        dispatcher: Any,
+    ) -> None:
+        """The fileset is on loc2hot and the target on hot1: the data crosses hosts."""
+        from stashd.config.cluster import load_cluster_config
+
+        for daemon in valid_cluster["daemons"]:
+            if daemon["id"] == "hot1":
+                daemon["host"] = "stash-loc1.example.org"
+        cluster = load_cluster_config(write_cluster(valid_cluster))
+        await flushing(session)
+
+        await run(sessions, cluster, dispatcher)
+
+        started = dispatcher.started[0]
+        assert started["target_host"] == "stash-loc1.example.org"
+        assert started["target_user"] == "mmustermann", "rsync connects as the owner"
