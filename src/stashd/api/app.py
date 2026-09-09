@@ -27,16 +27,19 @@ from stashd.auth.provider import AuthProvider
 from stashd.auth.token import TokenAuthProvider
 from stashd.clients.filesets import FilesetStore
 from stashd.clients.transfers import TransferDispatcher
+from stashd.clients.usage import UsageSource
 from stashd.config.bootstrap import BootstrapConfig
 from stashd.config.cluster import ClusterConfig, ConfigDocument
 from stashd.config.distribution import RefreshPlan, refresh_config
 from stashd.config.errors import ConfigError
 from stashd.config.reload import reload_document
 from stashd.domain.clock import Clock, SystemClock
+from stashd.domain.errors import StashError
 from stashd.drivers.base import StorageDriver
 from stashd.scheduler.loop import schedule_once
 from stashd.schemas.errors import ErrorEnvelope
 from stashd.services.reconcile import reconcile
+from stashd.services.usage import reconcile_storage
 from stashd.tasks.runner import TaskRunner
 
 logger = structlog.get_logger()
@@ -147,6 +150,37 @@ async def schedule(app: FastAPI) -> int:
     return len(started)
 
 
+async def reconcile_usage(app: FastAPI, storage_id: str) -> int:
+    """What one storage actually holds, adopted into the records.
+
+    A daemon that cannot answer is logged and left for the next pass: usage is
+    accounting, not admission, and a stale number is better than a stopped controller.
+    """
+    sessions = app.state.sessions
+    usage = app.state.usage
+    if sessions is None or usage is None:
+        return 0
+    async with sessions() as session:
+        try:
+            return await reconcile_storage(
+                session, storage_id=storage_id, usage=usage, clock=app.state.clock
+            )
+        except StashError as unreachable:
+            logger.warning("usage.unreachable", storage_id=storage_id, reason=str(unreachable))
+            return 0
+
+
+async def _usage_loop(  # pragma: no cover - a loop
+    app: FastAPI, storage_id: str, interval: float
+) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await reconcile_usage(app, storage_id)
+        except Exception:
+            logger.exception("usage.failed", storage_id=storage_id)
+
+
 async def _scheduler_loop(app: FastAPI, interval: float) -> None:  # pragma: no cover - a loop
     while True:
         await asyncio.sleep(interval)
@@ -200,6 +234,13 @@ async def background(app: FastAPI) -> AsyncIterator[None]:
         tasks.append(asyncio.create_task(_refresh_loop(app, plan)))
     if app.state.schedule_every is not None:
         tasks.append(asyncio.create_task(_scheduler_loop(app, app.state.schedule_every)))
+    if app.state.usage is not None and app.state.cluster is not None:
+        tasks.extend(
+            asyncio.create_task(
+                _usage_loop(app, storage.id, storage.usage_reconcile_interval.total_seconds())
+            )
+            for storage in app.state.cluster.cache_storages()
+        )
     if app.state.reload_from is not None:  # pragma: no cover - needs a real signal
         with suppress(NotImplementedError):
             asyncio.get_running_loop().add_signal_handler(
@@ -231,6 +272,7 @@ def create_app(
     registrar: object | None = None,
     announcement: object | None = None,
     schedule_every: float | None = None,
+    usage: UsageSource | None = None,
     owners: OwnerLookup | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
@@ -252,6 +294,7 @@ def create_app(
     app.state.registrar = registrar
     app.state.announcement = announcement
     app.state.schedule_every = schedule_every
+    app.state.usage = usage
     app.state.owners = owners or SystemOwnerLookup()
     app.state.clock = clock or SystemClock()
     app.add_middleware(RequestContextMiddleware)

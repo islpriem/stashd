@@ -20,6 +20,7 @@ from stashd.clients.events import EventReporter, HttpEventReporter, NullEventRep
 from stashd.clients.filesets import FilesetStore, HttpFilesetStore
 from stashd.clients.registration import Announcement, HttpRegistrar
 from stashd.clients.transfers import HttpTransferDispatcher, TransferDispatcher
+from stashd.clients.usage import HttpUsageSource, UsageSource
 from stashd.config.bootstrap import (
     BootstrapConfig,
     IdentityKind,
@@ -81,6 +82,7 @@ class Parts:
     registrar: HttpRegistrar | None = None
     announcement: Announcement | None = None
     schedule_every: float | None = None
+    usage: UsageSource | None = None
 
 
 def _identity(kind: IdentityKind) -> Identity:
@@ -127,6 +129,7 @@ def _controller_parts(config: BootstrapConfig, document: ConfigDocument) -> Part
         client = httpx2.AsyncClient()
         parts.store = HttpFilesetStore(document.config, token, client)
         parts.dispatcher = HttpTransferDispatcher(document.config, token, client)
+        parts.usage = HttpUsageSource(document.config, token, client)
     return parts
 
 
@@ -219,6 +222,7 @@ def main(
             registrar=parts.registrar,
             announcement=parts.announcement,
             schedule_every=parts.schedule_every,
+            usage=parts.usage,
         ),
         bootstrap.server,
     )
