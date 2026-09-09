@@ -100,6 +100,37 @@
   arrived and its reservation held. A daemon that cannot be reached does not leave the
   controller believing the transfer still runs.
 
+- `flush`: a fileset written back to a path on a source storage, scheduled like a
+  warm and subject to the same limits. The target must be an existing directory the user
+  can write into, `--delete` is never used, and on success the fileset is released unless
+  `keep` was asked for.
+
+- Releasing an output fileset needs `discard`. It holds the only copy of its data,
+  so the server refuses to lose it by accident, whoever asks; a cached fileset is
+  reconstructible from its source and needs nothing.
+
+- Admin limits: `PUT`/`DELETE /limits/{user}[/{storage}]`. Lowering a limit below
+  what a user already holds blocks their next allocation and touches no data; clearing one
+  falls back to the configured default.
+
+- Drain: `POST /storages/{id}/drain` and `/undrain`. Drain state lives in the
+  database, so it survives a config rollout: no new dispatches, no new filesets, and
+  running transfers finish.
+
+- Usage reconciliation: each cache storage is measured on its own
+  `usage_reconcile_interval`, correcting `used_bytes` and flagging filesets past their
+  allocation, which blocks that user's next allocation. The driver interface gained
+  `fileset_usage` and `storage_usage`, and `stat` gained `writable`.
+
+- Reports: `GET /reports/usage` grouped by user, storage, route or
+  location, and `GET /reports/allocation` with the over-allocation offenders. Admin only.
+
+- Retention: terminal transfers past `retention.transfers` are rolled into daily
+  buckets before their rows are deleted, so report totals do not move; audit events past
+  `retention.audit` are deleted.
+
+- Prometheus metrics on `/metrics`, computed from the database at each scrape.
+
 ### Changed
 
 - Cluster config: a `daemons:` section (id, url, host) replaces `daemon_host` on storages,
