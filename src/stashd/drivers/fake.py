@@ -61,9 +61,12 @@ class FakeDriver:
     def stat(self, path: ResolvedPath, *, owner: Owner) -> PathStat:
         del owner
         known = self.paths.get(path.absolute)
-        if known is None:
-            return PathStat(exists=False, is_dir=False, readable=False)
-        return known
+        if known is not None:
+            return known
+        if path.absolute in self.filesets:
+            # A fileset the driver made is a directory its owner may write into.
+            return PathStat(exists=True, is_dir=True, readable=True, writable=True)
+        return PathStat(exists=False, is_dir=False, readable=False, writable=False)
 
     def measure(self, path: ResolvedPath, *, owner: Owner, timeout: float) -> SizeReport:
         del owner, timeout

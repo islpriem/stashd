@@ -40,6 +40,8 @@ class PathStat:
     exists: bool
     is_dir: bool
     readable: bool
+    # A flush target has to be writable by the user it is flushed for.
+    writable: bool = False
 
 
 @dataclass(frozen=True, slots=True)

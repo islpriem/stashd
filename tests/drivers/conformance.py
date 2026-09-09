@@ -38,6 +38,10 @@ class DriverConformance:
     def seed_file(self, location: FilesetLocation, name: str) -> None:
         raise NotImplementedError
 
+    def relative_of(self, location: FilesetLocation) -> str:
+        """The location as the storage names it: filesets live at /<user>/<name>."""
+        return f"/{location.owner.user}/{location.name}"
+
     def test_the_path_is_prefix_user_name(self, driver: StorageDriver, owner: Owner) -> None:
         path = driver.fileset_path(owner, "mydir")
 
@@ -147,6 +151,25 @@ class DriverConformance:
     ) -> None:
         with pytest.raises(StashError):
             driver.resolve(path)
+
+    def test_a_directory_the_owner_may_write_into_says_so(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        """A flush target has to be writable by the user it is flushed for."""
+        location = driver.create_fileset(owner, "mydir", 1024)
+
+        found = driver.stat(driver.resolve(self.relative_of(location)), owner=owner)
+
+        assert found.exists and found.is_dir
+        assert found.writable
+
+    def test_what_is_not_there_is_not_writable(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        found = driver.stat(driver.resolve("/nothing/here"), owner=owner)
+
+        assert not found.exists
+        assert not found.writable
 
     def test_a_fileset_can_be_addressed_as_a_transfer_endpoint(
         self, driver: StorageDriver, owner: Owner

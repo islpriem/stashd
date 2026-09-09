@@ -65,11 +65,12 @@ class PosixDriver:
         """Asked as the owner: STASH never reports what the user cannot see themselves."""
         exists = self._identity.run(owner, ["test", "-e", path.absolute]).ok
         if not exists:
-            return PathStat(exists=False, is_dir=False, readable=False)
+            return PathStat(exists=False, is_dir=False, readable=False, writable=False)
         return PathStat(
             exists=True,
             is_dir=self._identity.run(owner, ["test", "-d", path.absolute]).ok,
             readable=self._identity.run(owner, ["test", "-r", path.absolute]).ok,
+            writable=self._identity.run(owner, ["test", "-w", path.absolute]).ok,
         )
 
     def measure(self, path: ResolvedPath, *, owner: Owner, timeout: float) -> SizeReport:
