@@ -1,10 +1,12 @@
 """Liveness and readiness, served by both roles."""
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from stashd import __version__
 from stashd.config.bootstrap import BootstrapConfig
+from stashd.obs.metrics import CONTENT_TYPE, render
 
 
 class Health(BaseModel):
@@ -54,5 +56,21 @@ def health_router(bootstrap: BootstrapConfig) -> APIRouter:
             if degraded
             else {},
         )
+
+    @router.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
+    async def metrics(request: Request) -> Response:
+        """What the cluster looks like right now, read from the database."""
+        sessions = request.app.state.sessions
+        cluster = request.app.state.cluster
+        if sessions is None or cluster is None:
+            return Response("", media_type=CONTENT_TYPE)
+        async with sessions() as session:
+            body = await render(
+                session,
+                cluster=cluster,
+                clock=request.app.state.clock,
+                unreachable_after=cluster.timeouts.daemon_unreachable,
+            )
+        return Response(body, media_type=CONTENT_TYPE)
 
     return router
