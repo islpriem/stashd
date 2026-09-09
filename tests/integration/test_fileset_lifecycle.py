@@ -66,7 +66,11 @@ class TestCreate:
         first = (await api.post("/filesets", json=creation())).json()
         await api.post(
             "/transfers",
-            json={"kind": "release", "target": {"storage": "LOC2HOT", "fileset": "results"}},
+            json={
+                "kind": "release",
+                "target": {"storage": "LOC2HOT", "fileset": "results"},
+                "discard": True,
+            },
         )
 
         assert (await api.post("/filesets", json=creation())).status_code == 201
@@ -184,7 +188,11 @@ class TestRelease:
     async def released(self, api: httpx2.AsyncClient, name: str = "results") -> httpx2.Response:
         return await api.post(
             "/transfers",
-            json={"kind": "release", "target": {"storage": "LOC2HOT", "fileset": name}},
+            json={
+                "kind": "release",
+                "target": {"storage": "LOC2HOT", "fileset": name},
+                "discard": True,
+            },
         )
 
     async def test_the_fileset_is_gone_and_the_allocation_is_free(
@@ -235,6 +243,7 @@ class TestRelease:
             json={
                 "kind": "release",
                 "target": {"storage": "LOC2HOT", "fileset": "results"},
+                "discard": True,
                 "user": "mmustermann",
             },
             headers={"Authorization": "Munge cred-other"},
@@ -250,7 +259,11 @@ class TestRelease:
 
         response = await api.post(
             "/transfers",
-            json={"kind": "release", "target": {"storage": "LOC2HOT", "fileset": "results"}},
+            json={
+                "kind": "release",
+                "target": {"storage": "LOC2HOT", "fileset": "results"},
+                "discard": True,
+            },
             headers={"Authorization": "Munge cred-other"},
         )
 
@@ -264,6 +277,7 @@ class TestRelease:
             json={
                 "kind": "release",
                 "target": {"storage": "LOC2HOT", "fileset": "results"},
+                "discard": True,
                 "user": "mmustermann",
             },
             headers={"Authorization": "Munge cred-admin"},

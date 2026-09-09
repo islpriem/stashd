@@ -10,12 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stashd.clients.filesets import FilesetStore
 from stashd.domain.clock import Clock
 from stashd.domain.errors import ErrorCode, NotFound, StashError
-from stashd.domain.filesets import FilesetState, next_fileset_state
+from stashd.domain.filesets import FilesetKind, FilesetState, next_fileset_state
 from stashd.domain.identity import Principal
 from stashd.domain.transfers import TransferKind, TransferState, next_transfer_state
 from stashd.models import Fileset, Transfer
 from stashd.services import audit
 from stashd.services.filesets import Forbidden, live_fileset, location_of
+
+
+class FlushTargetRequired(StashError):
+    code = ErrorCode.FLUSH_TARGET_REQUIRED
 
 
 async def release_fileset(
@@ -28,6 +32,7 @@ async def release_fileset(
     subject_user: str,
     storage_id: str,
     name: str,
+    discard: bool = False,
 ) -> Transfer:
     if subject_user != actor.username and not is_admin:
         raise Forbidden(f"only an admin may act for {subject_user}", user=subject_user)
@@ -43,7 +48,30 @@ async def release_fileset(
             f"{fileset.name} on {storage_id} belongs to {fileset.owner_user}",
             owner=fileset.owner_user,
         )
+    # An output fileset exists nowhere else: losing it needs to be deliberate, whoever
+    # asks. A cached one is reconstructible from its source.
+    if fileset.kind is FilesetKind.OUTPUT and not discard:
+        raise FlushTargetRequired(
+            f"{name} on {storage_id} holds the only copy of its data: "
+            f"flush it somewhere first, or release it with discard",
+            storage=storage_id,
+            name=name,
+        )
 
+    return await perform_release(
+        session, store=store, clock=clock, actor=actor, fileset=fileset
+    )
+
+
+async def perform_release(
+    session: AsyncSession,
+    *,
+    store: FilesetStore,
+    clock: Clock,
+    actor: Principal,
+    fileset: Fileset,
+) -> Transfer:
+    """Delete the directory, then free the reservation. Never the other way round."""
     transfer = _start(session, clock, fileset)
     fileset.state = next_fileset_state(fileset.state, FilesetState.RELEASING)
     await session.commit()
@@ -78,7 +106,11 @@ async def release_fileset(
         object_type="fileset",
         object_id=str(fileset.id),
         action="release",
-        detail={"storage": storage_id, "name": name, "freed_bytes": fileset.allocated_bytes},
+        detail={
+            "storage": fileset.storage_id,
+            "name": fileset.name,
+            "freed_bytes": fileset.allocated_bytes,
+        },
     )
     await session.commit()
     return transfer

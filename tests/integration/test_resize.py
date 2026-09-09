@@ -143,7 +143,11 @@ class TestPermissionsAndState:
         fileset = await created(api)
         await api.post(
             "/transfers",
-            json={"kind": "release", "target": {"storage": "LOC2HOT", "fileset": "results"}},
+            json={
+                "kind": "release",
+                "target": {"storage": "LOC2HOT", "fileset": "results"},
+                "discard": True,
+            },
         )
 
         response = await api.patch(f"/filesets/{fileset['id']}", json={"size_bytes": 5 * GIB})
