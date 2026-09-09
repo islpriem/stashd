@@ -34,6 +34,8 @@ class Transfer(Base):
     task_id: Mapped[Name | None] = mapped_column(default=None)
     # A retry waits before it is offered again; submitted_at keeps its place.
     retry_after: Mapped[datetime | None] = mapped_column(default=None)
+    # A flush releases the fileset when it succeeds, unless the user asked to keep it.
+    release_after: Mapped[bool] = mapped_column(default=False)
     error_code: Mapped[Name | None] = mapped_column(default=None)
     error_detail: Mapped[str | None] = mapped_column(default=None)
     submitted_at: Mapped[datetime]
