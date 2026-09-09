@@ -11,13 +11,16 @@ from datetime import datetime
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from stashd.clients.filesets import FilesetStore
 from stashd.config.cluster import ClusterConfig
 from stashd.domain.clock import Clock
 from stashd.domain.errors import NotFound
 from stashd.domain.failures import FailureClass
 from stashd.domain.fairshare import points_for_bytes
 from stashd.domain.filesets import FilesetState, next_fileset_state
+from stashd.domain.identity import Principal
 from stashd.domain.transfers import (
+    TransferKind,
     TransferState,
     is_backwards,
     next_transfer_state,
@@ -56,7 +59,11 @@ class Event:
 
 
 async def apply_event(
-    session: AsyncSession, clock: Clock, event: Event, cluster: ClusterConfig
+    session: AsyncSession,
+    clock: Clock,
+    event: Event,
+    cluster: ClusterConfig,
+    store: FilesetStore | None = None,
 ) -> tuple[bool, Transfer]:
     transfer = await session.get(Transfer, event.transfer_id)
     if transfer is None:
@@ -96,11 +103,43 @@ async def apply_event(
     retrying = event.kind == FAILED and _retry(cluster, transfer, event)
     if retrying:
         _requeue(clock, cluster, transfer)
-    await _apply_to_fileset(session, clock, transfer, event, retrying=retrying)
+    fileset = await _apply_to_fileset(session, clock, transfer, event, retrying=retrying)
     if event.kind in (FAILED, CANCELLED) and not retrying:
         await _refund(session, clock, cluster, transfer)
     await session.commit()
+    if fileset is not None and store is not None and _releases_now(transfer, event):
+        await _release_after_flush(session, clock, transfer, fileset, store)
     return True, transfer
+
+
+def _releases_now(transfer: Transfer, event: Event) -> bool:
+    """A flush that asked for it releases the fileset it wrote out."""
+    return (
+        transfer.kind is TransferKind.FLUSH
+        and event.kind == FINISHED
+        and transfer.release_after
+    )
+
+
+async def _release_after_flush(
+    session: AsyncSession,
+    clock: Clock,
+    transfer: Transfer,
+    fileset: Fileset,
+    store: FilesetStore,
+) -> None:
+    from stashd.services.transfers_release import perform_release
+
+    owner = Principal(uid=fileset.owner_uid, gid=fileset.owner_gid, username=fileset.owner_user)
+    try:
+        await perform_release(session, store=store, clock=clock, actor=owner, fileset=fileset)
+    except Exception as failure:  # the flush succeeded; the release is its own outcome
+        logger.warning(
+            "flush.release_failed",
+            transfer_id=transfer.id,
+            fileset_id=fileset.id,
+            error=str(failure),
+        )
 
 
 def _retry(cluster: ClusterConfig, transfer: Transfer, event: Event) -> bool:
@@ -148,17 +187,24 @@ async def _refund(
 
 async def _apply_to_fileset(
     session: AsyncSession, clock: Clock, transfer: Transfer, event: Event, *, retrying: bool
-) -> None:
+) -> Fileset | None:
     fileset = await session.get(Fileset, transfer.fileset_id)
     if fileset is None:  # pragma: no cover - a transfer always has one
-        return
+        return None
     fileset.last_transfer_id = transfer.id
+    flushing = transfer.kind is TransferKind.FLUSH
     if event.kind == FINISHED:
         fileset.state = next_fileset_state(fileset.state, FilesetState.READY)
-        fileset.warm_finished_at = event.at
-        fileset.used_bytes = transfer.bytes_done
-        fileset.used_bytes_at = clock.now()
-        fileset.file_count = transfer.files_done or fileset.file_count
+        if flushing:
+            # A flush reads the fileset out; what it holds is unchanged.
+            fileset.last_flushed_at = event.at
+            fileset.last_flush_target = transfer.peer_ref
+        else:
+            fileset.warm_finished_at = event.at
+            fileset.used_bytes = transfer.bytes_done
+            fileset.used_bytes_at = clock.now()
+            fileset.file_count = transfer.files_done or fileset.file_count
     elif event.kind == FAILED and not retrying:
         # The reservation stays until the owner releases the fileset.
         fileset.state = next_fileset_state(fileset.state, FilesetState.FAILED)
+    return fileset

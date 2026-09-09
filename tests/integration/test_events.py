@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import httpx2
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stashd.domain.filesets import FilesetKind, FilesetState
@@ -268,3 +269,104 @@ class TestRetries:
         session.expire_all()
         account = await session.get(FairShareAccountRow, "mmustermann")
         assert account is not None and account.points == 20.0
+
+
+async def flushing(session: AsyncSession, *, release_after: bool) -> tuple[int, int]:
+    """An output fileset being written back out to a source storage."""
+    fileset = Fileset(
+        name="results",
+        owner_user="mmustermann",
+        owner_uid=1000,
+        owner_gid=1000,
+        storage_id="LOC2HOT",
+        kind=FilesetKind.OUTPUT,
+        state=FilesetState.FLUSHING,
+        path="/fake/cache/mmustermann/results",
+        allocated_bytes=4 * GIB,
+        used_bytes=3 * GIB,
+        created_at=T0,
+    )
+    session.add(fileset)
+    await session.flush()
+    transfer = Transfer(
+        kind=TransferKind.FLUSH,
+        user="mmustermann",
+        fileset_id=fileset.id,
+        peer_ref="HOT1:/mmustermann/out",
+        state=TransferState.RUNNING,
+        route="LOC2HOT->HOT1",
+        bytes_total=3 * GIB,
+        release_after=release_after,
+        submitted_at=T0,
+        started_at=T0,
+        executing_daemon_id="loc2hot",
+    )
+    session.add(transfer)
+    await session.commit()
+    return transfer.id, fileset.id
+
+
+class TestWhenAFlushFinishes:
+    async def test_the_fileset_is_released_once_the_data_is_out(
+        self, peer: httpx2.AsyncClient, session: AsyncSession, fake_driver: object
+    ) -> None:
+        transfer_id, fileset_id = await flushing(session, release_after=True)
+
+        await peer.post("/events", json=event(transfer_id, 1, "finished", bytes_done=3 * GIB))
+
+        session.expire_all()
+        fileset = await session.get(Fileset, fileset_id)
+        assert fileset is not None
+        assert fileset.state is FilesetState.RELEASED
+        assert fileset.released_at is not None
+        assert fileset.last_flushed_at is not None
+        assert fileset.last_flush_target == "HOT1:/mmustermann/out"
+        assert getattr(fake_driver, "filesets", {}) == {}, "the directory is gone"
+
+    async def test_keep_leaves_the_fileset_where_it_is(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        transfer_id, fileset_id = await flushing(session, release_after=False)
+
+        await peer.post("/events", json=event(transfer_id, 1, "finished", bytes_done=3 * GIB))
+
+        session.expire_all()
+        fileset = await session.get(Fileset, fileset_id)
+        assert fileset is not None
+        assert fileset.state is FilesetState.READY
+        assert fileset.released_at is None
+        assert fileset.last_flushed_at is not None
+
+    async def test_a_failed_flush_releases_nothing(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        transfer_id, fileset_id = await flushing(session, release_after=True)
+
+        await peer.post(
+            "/events",
+            json=event(transfer_id, 1, "failed", failure="permission", message="denied"),
+        )
+
+        session.expire_all()
+        fileset = await session.get(Fileset, fileset_id)
+        assert fileset is not None
+        assert fileset.state is FilesetState.FAILED
+        assert fileset.released_at is None
+
+    async def test_the_release_is_a_transfer_of_its_own(
+        self, peer: httpx2.AsyncClient, session: AsyncSession
+    ) -> None:
+        """The history says what happened: a flush, then the release it triggered."""
+        transfer_id, _ = await flushing(session, release_after=True)
+
+        await peer.post("/events", json=event(transfer_id, 1, "finished", bytes_done=3 * GIB))
+
+        session.expire_all()
+        kinds = [
+            (row.kind, row.state)
+            for row in (await session.scalars(sa.select(Transfer).order_by(Transfer.id)))
+        ]
+        assert kinds == [
+            (TransferKind.FLUSH, TransferState.SUCCEEDED),
+            (TransferKind.RELEASE, TransferState.SUCCEEDED),
+        ]

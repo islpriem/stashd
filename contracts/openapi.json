@@ -825,12 +825,58 @@
         "title": "Storages",
         "type": "object"
       },
+      "SubmitFlush": {
+        "additionalProperties": false,
+        "description": "A fileset written back out to a source storage.",
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "keep": {
+            "default": false,
+            "title": "Keep",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "flush",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/FilesetRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/PathRef"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "target"
+        ],
+        "title": "SubmitFlush",
+        "type": "object"
+      },
       "SubmitRelease": {
         "additionalProperties": false,
+        "description": "Deleting a fileset. An output fileset needs ``discard`` to say so.",
         "properties": {
-          "force": {
+          "discard": {
             "default": false,
-            "title": "Force",
+            "title": "Discard",
             "type": "boolean"
           },
           "kind": {
@@ -3056,7 +3102,7 @@
         "summary": "List Transfers"
       },
       "post": {
-        "description": "Submit a warm or a release. A release runs synchronously.",
+        "description": "Submit a warm, a flush or a release. A release runs synchronously.",
         "operationId": "submit_transfer_api_v1_transfers_post",
         "requestBody": {
           "content": {
@@ -3064,12 +3110,16 @@
               "schema": {
                 "discriminator": {
                   "mapping": {
+                    "flush": "#/components/schemas/SubmitFlush",
                     "release": "#/components/schemas/SubmitRelease",
                     "warm": "#/components/schemas/SubmitWarm"
                   },
                   "propertyName": "kind"
                 },
                 "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitFlush"
+                  },
                   {
                     "$ref": "#/components/schemas/SubmitRelease"
                   },
