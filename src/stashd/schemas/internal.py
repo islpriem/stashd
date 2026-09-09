@@ -146,3 +146,33 @@ class Registered(Wire):
     config_revision: int
     # True when the controller has moved on and the daemon should fetch again.
     refresh_needed: bool
+
+
+class MeasureFileset(Wire):
+    """One fileset the controller wants measured, as this daemon addresses it."""
+
+    fileset_id: int
+    name: str
+    owner: Owner
+    path: str
+
+
+class MeasureFilesets(Wire):
+    storage_id: str
+    filesets: list[MeasureFileset]
+
+
+class FilesetUsage(Wire):
+    fileset_id: int
+    used_bytes: int
+    file_count: int
+
+
+class FilesetUsages(Wire):
+    filesets: list[FilesetUsage]
+
+
+class StorageUsage(Wire):
+    storage_id: str
+    used_bytes: int
+    file_count: int

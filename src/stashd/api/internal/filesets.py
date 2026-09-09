@@ -11,7 +11,16 @@ from stashd.domain.errors import NotFound
 from stashd.domain.storage import FilesetLocation as DomainLocation
 from stashd.domain.storage import Owner as DomainOwner
 from stashd.drivers.base import StorageDriver
-from stashd.schemas.internal import CreateFileset, DeleteFileset, FilesetLocation, SetQuota
+from stashd.schemas.internal import (
+    CreateFileset,
+    DeleteFileset,
+    FilesetLocation,
+    FilesetUsage,
+    FilesetUsages,
+    MeasureFilesets,
+    SetQuota,
+    StorageUsage,
+)
 
 router = APIRouter()
 
@@ -56,3 +65,37 @@ async def delete_fileset(request: Request, fileset_id: int, body: DeleteFileset)
         DomainLocation(storage_id=body.storage_id, name=body.name, owner=owner, path=body.path)
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/filesets/usage")
+async def fileset_usage(request: Request, body: MeasureFilesets) -> FilesetUsages:
+    """What each fileset actually holds, measured as its owner."""
+    driver = driver_for(request, body.storage_id)
+    measured = []
+    for wanted in body.filesets:
+        location = DomainLocation(
+            storage_id=body.storage_id,
+            name=wanted.name,
+            owner=DomainOwner(
+                user=wanted.owner.user, uid=wanted.owner.uid, gid=wanted.owner.gid
+            ),
+            path=wanted.path,
+        )
+        usage = driver.fileset_usage(location)
+        measured.append(
+            FilesetUsage(
+                fileset_id=wanted.fileset_id,
+                used_bytes=usage.used_bytes,
+                file_count=usage.file_count,
+            )
+        )
+    return FilesetUsages(filesets=measured)
+
+
+@router.get("/storages/{storage_id}/usage")
+async def storage_usage(request: Request, storage_id: str) -> StorageUsage:
+    """Filesystem truth for the whole storage, for the metric that watches it."""
+    usage = driver_for(request, storage_id).storage_usage()
+    return StorageUsage(
+        storage_id=storage_id, used_bytes=usage.used_bytes, file_count=usage.file_count
+    )

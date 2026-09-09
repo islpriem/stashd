@@ -177,3 +177,47 @@ def test_a_controller_serves_the_internal_api_too(
     )
 
     assert response.status_code == 404, "the controller serves no storage"
+
+
+class TestMeasuringFilesets:
+    def test_it_answers_with_what_each_fileset_holds(
+        self, daemon: TestClient, prefix: Path
+    ) -> None:
+        daemon.post("/internal/v1/filesets", json=create_body("results"))
+        path = prefix / OWNER["user"] / "results"
+        (path / "big").write_bytes(b"x" * 4096)
+
+        response = daemon.post(
+            "/internal/v1/filesets/usage",
+            json={
+                "storage_id": "LOC2HOT",
+                "filesets": [
+                    {"fileset_id": 7, "name": "results", "owner": OWNER, "path": str(path)}
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        measured = response.json()["filesets"]
+        assert [row["fileset_id"] for row in measured] == [7]
+        assert measured[0]["used_bytes"] > 0
+        assert measured[0]["file_count"] == 1
+
+    def test_a_storage_this_daemon_does_not_serve_is_a_404(self, daemon: TestClient) -> None:
+        response = daemon.post(
+            "/internal/v1/filesets/usage", json={"storage_id": "NOPE", "filesets": []}
+        )
+
+        assert response.status_code == 404
+
+    def test_the_storage_reports_its_own_total(self, daemon: TestClient, prefix: Path) -> None:
+        daemon.post("/internal/v1/filesets", json=create_body("results"))
+        (prefix / OWNER["user"] / "results" / "big").write_bytes(b"x" * 4096)
+
+        response = daemon.get("/internal/v1/storages/LOC2HOT/usage")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["storage_id"] == "LOC2HOT"
+        assert body["used_bytes"] > 0
+        assert body["file_count"] == 1
