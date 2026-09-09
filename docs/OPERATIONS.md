@@ -1,7 +1,6 @@
 # Operating STASH
 
-What an operator has to decide, install and watch. Grows with the code; today it
-covers creating and releasing filesets.
+What an operator has to decide, install and watch.
 
 ## Roles and processes
 
@@ -68,6 +67,62 @@ the controller again. Each daemon announces itself on startup and on every refre
 `worker_pool_size` bounds how many transfers a daemon runs at once. It may not be smaller
 than `concurrency.per_storage`, or the daemon would be handed more work than it can run;
 it refuses to start in that case.
+
+## SSH between daemon hosts
+
+A transfer whose two storages sit on different daemons runs over rsync's ssh channel. The
+daemon holding the source connects to the target daemon's `host` **as the requesting
+user**, so every user who transfers across sites needs key-based ssh from the
+source host to the target host, and `ssh -o BatchMode=yes` must succeed without a prompt.
+A daemon without `host:` in the cluster config can only take part in local transfers.
+
+The alternative — connecting as a service account and using rsync's `--rsync-path` to
+switch to the user on the far side — is not implemented.
+
+## Draining a storage
+
+`POST /api/v1/storages/{id}/drain` (admin) stops new work involving a storage: the
+scheduler dispatches nothing that touches it and fileset creation on it is refused with
+`STORAGE_DRAINED`. Transfers already running finish. `undrain` reverses it. Drain state
+lives in the database, not the cluster config, so it survives a config rollout and takes
+effect without one. `stash storages` shows which storages are drained.
+
+Draining is what you do before maintenance. It does not evacuate anything: filesets stay
+where they are, and their owners keep their reservations.
+
+## Usage reconciliation
+
+Each cache storage is measured on its own `usage_reconcile_interval` (default 15 minutes):
+the controller asks the owning daemon what every live fileset holds, corrects
+`used_bytes`, and flags anything past its allocation. A daemon that cannot answer is
+logged and retried on the next pass. Raise the interval on storages where walking the
+tree is expensive; lower it where overruns need to be caught quickly.
+
+## Retention
+
+Terminal transfers older than `retention.transfers` are rolled into a daily bucket per
+user, storage, route and kind, then deleted; audit events older than `retention.audit`
+are deleted. The usage report reads both the live rows and the buckets, so totals do not
+move when pruning runs. What a bucket cannot keep is the distribution: p95 queue wait
+covers only transfers that are still in the table.
+
+Pruning runs hourly on the controller. Nothing else deletes rows.
+
+## Metrics
+
+`/metrics` on the controller serves the Prometheus text format, without a credential, and
+is computed from the database at each scrape. Watch `stash_daemon_up` (a daemon not seen
+within `timeouts.daemon_unreachable`), `stash_queue_depth`, and
+`stash_storage_used_bytes` against `stash_storage_allocated_bytes` — a gap that keeps
+growing means users reserve more than they use.
+
+## The controller is a single point of failure
+
+There is one controller. While it is down: no submissions, no reads, no scheduling, and
+daemons run on their cached config and report themselves degraded. Transfers already
+handed to a daemon keep running and their events are retried; nothing is lost, but
+nothing new starts. Restarting the controller reconciles in-flight transfers against the
+daemons before it schedules anything new.
 
 ## Backups
 
