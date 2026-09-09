@@ -48,3 +48,10 @@ class Storage(Wire):
 
 class Storages(Wire):
     storages: list[Storage]
+
+
+class DrainState(Wire):
+    """What an admin changed, echoed back."""
+
+    storage: str
+    drained: bool
