@@ -100,6 +100,7 @@ class FakeDriver:
             fileset.quota_bytes = allocation
 
     def fileset_usage(self, location: FilesetLocation) -> UsageReport:
+        self._check_inside_prefix(location)
         fileset = self.filesets.get(location.path)
         if fileset is None:
             return UsageReport(used_bytes=0, file_count=0)
@@ -115,10 +116,14 @@ class FakeDriver:
 
     def delete_fileset(self, location: FilesetLocation) -> None:
         self._maybe_fail("delete_fileset")
+        self._check_inside_prefix(location)
+        self.filesets.pop(location.path, None)
+
+    def _check_inside_prefix(self, location: FilesetLocation) -> None:
+        """The path in the request is never trusted; it is re-derived here."""
         expected = f"{self._prefix}/{location.owner.user}/{location.name}"
         if location.path != expected:
             raise InvalidPath(f"{location.path} is not a fileset path", path=location.path)
-        self.filesets.pop(location.path, None)
 
     def with_source(self, path: str, *, bytes_total: int, file_count: int) -> str:
         """Pretend a readable directory of that size is there, for a probe to find."""

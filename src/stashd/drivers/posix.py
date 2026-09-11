@@ -126,7 +126,13 @@ class PosixDriver:
         del location, allocation
 
     def fileset_usage(self, location: FilesetLocation) -> UsageReport:
-        """Measured as the owner, like everything else that touches user data."""
+        """Measured as the owner, like everything else that touches user data.
+
+        The path is re-derived and re-checked here, like a delete: a measurement is a
+        read of somebody's directory, and the request that asked for it is not trusted
+        with where to point it.
+        """
+        self._check_inside_prefix(location)
         return self._usage(location.owner, location.path)
 
     def storage_usage(self) -> UsageReport:

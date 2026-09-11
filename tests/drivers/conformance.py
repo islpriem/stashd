@@ -200,6 +200,31 @@ class DriverConformance:
         assert usage.used_bytes == 0
         assert usage.file_count == 0
 
+    def test_usage_is_refused_for_a_path_that_is_not_a_fileset(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        """The path in the request is never trusted, whoever sent it."""
+        elsewhere = FilesetLocation(
+            storage_id=driver.storage_id, name="mydir", owner=owner, path="/etc"
+        )
+
+        with pytest.raises(StashError):
+            driver.fileset_usage(elsewhere)
+
+    def test_usage_is_refused_for_another_users_fileset_path(
+        self, driver: StorageDriver, owner: Owner
+    ) -> None:
+        mine = driver.create_fileset(owner, "mydir", 1024)
+        stolen = FilesetLocation(
+            storage_id=driver.storage_id,
+            name="mydir",
+            owner=Owner(user="somebody", uid=owner.uid + 1, gid=owner.gid),
+            path=mine.path,
+        )
+
+        with pytest.raises(StashError):
+            driver.fileset_usage(stolen)
+
     def test_the_storage_reports_what_it_holds_in_total(
         self, driver: StorageDriver, owner: Owner
     ) -> None:

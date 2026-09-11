@@ -221,3 +221,22 @@ class TestMeasuringFilesets:
         assert body["storage_id"] == "LOC2HOT"
         assert body["used_bytes"] > 0
         assert body["file_count"] == 1
+
+    def test_a_path_outside_the_storage_is_refused(
+        self, daemon: TestClient, prefix: Path
+    ) -> None:
+        """A peer that asks about /etc is asking the daemon to read somebody else's data."""
+        daemon.post("/internal/v1/filesets", json=create_body("results"))
+
+        response = daemon.post(
+            "/internal/v1/filesets/usage",
+            json={
+                "storage_id": "LOC2HOT",
+                "filesets": [
+                    {"fileset_id": 7, "name": "results", "owner": OWNER, "path": "/etc"}
+                ],
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "INVALID_PATH"
