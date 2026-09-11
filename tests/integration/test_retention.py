@@ -1,7 +1,7 @@
 """Pruning old rows, keeping the numbers that reports are built from."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import httpx2
 import pytest
@@ -204,5 +204,5 @@ class TestTheControllerLoop:
             state=SimpleNamespace(sessions=sessions, cluster=cluster_config, clock=_clock())
         )
 
-        assert await prune_old_rows(app) == 1
+        assert await prune_old_rows(cast("Any", app)) == 1
         assert list(await session.scalars(sa.select(Transfer.id))) == []

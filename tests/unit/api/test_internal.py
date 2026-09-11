@@ -184,7 +184,7 @@ class TestMeasuringFilesets:
         self, daemon: TestClient, prefix: Path
     ) -> None:
         daemon.post("/internal/v1/filesets", json=create_body("results"))
-        path = prefix / OWNER["user"] / "results"
+        path = prefix / str(OWNER["user"]) / "results"
         (path / "big").write_bytes(b"x" * 4096)
 
         response = daemon.post(
@@ -212,7 +212,7 @@ class TestMeasuringFilesets:
 
     def test_the_storage_reports_its_own_total(self, daemon: TestClient, prefix: Path) -> None:
         daemon.post("/internal/v1/filesets", json=create_body("results"))
-        (prefix / OWNER["user"] / "results" / "big").write_bytes(b"x" * 4096)
+        (prefix / str(OWNER["user"]) / "results" / "big").write_bytes(b"x" * 4096)
 
         response = daemon.get("/internal/v1/storages/LOC2HOT/usage")
 
