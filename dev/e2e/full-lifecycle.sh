@@ -76,16 +76,9 @@ echo "=== 3. usage reconciliation notices what is on disk ==="
 sleep 70
 stash "quota"
 
-echo "=== 4. flush it out, which releases it ==="
-post "/transfers" "{\"kind\": \"flush\", \"source\": {\"storage\": \"LOC2HOT\", \"fileset\": \"results\"}, \"target\": {\"storage\": \"HOT1\", \"path\": \"/$USER_NAME/out\"}}"
-i=0
-while [ "$i" -lt 60 ]; do
-    state=$(as_user "curl -sS '$CONTROLLER/api/v1/transfers?kind=flush' -H \"Authorization: Munge \$(munge -n)\"" | sed -n 's/.*"state":"\([A-Z]*\)".*/\1/p')
-    case "$state" in SUCCEEDED|FAILED|CANCELLED) break ;; esac
-    sleep 2
-    i=$((i + 1))
-done
-echo "flush ended in $state"
+echo "=== 4. flush it out with the CLI, which releases it ==="
+stash "path LOC2HOT:results"
+stash "--yes cool LOC2HOT:results --to HOT1:/$USER_NAME/out --wait"
 echo "--- what reached HOT1 ---"
 ls -l "/srv/stash/hot1/$USER_NAME/out/"
 echo "--- the fileset is gone from the cache ---"
@@ -93,21 +86,25 @@ ls -ld "/srv/stash/loc2hot/$USER_NAME/results" 2>&1 || echo "released"
 stash "fileset list --state RELEASED"
 
 echo "=== 5. release the cached fileset: no discard needed ==="
-post "/transfers" "{\"kind\": \"release\", \"target\": {\"storage\": \"LOC2HOT\", \"fileset\": \"mydir\"}}"
+stash "--yes release LOC2HOT:mydir"
 ls -ld "/srv/stash/loc2hot/$USER_NAME/mydir" 2>&1 || echo "released"
 
 echo "=== 6. an output fileset may not be lost by accident ==="
 stash "fileset create LOC2HOT:precious --size 1Gi"
-post "/transfers" "{\"kind\": \"release\", \"target\": {\"storage\": \"LOC2HOT\", \"fileset\": \"precious\"}}"
+stash "--yes release LOC2HOT:precious"
+echo "--- and without a terminal, --yes is required ---"
+stash "release LOC2HOT:precious"
 
-echo "=== 7. admin: limits, drain, reports ==="
-admin PUT "/limits/$USER_NAME/LOC2HOT" '{"allocation_limit_bytes": 1073741824}'
+echo "=== 7. admin, through the CLI this time ==="
+admin_cli() { COLUMNS=90 STASH_SERVER=$CONTROLLER $STASHCLI/bin/stash "$@" || echo "exit $?"; }
+admin_cli admin limit set "$USER_NAME" LOC2HOT 1Gi
 stash "quota"
-admin POST "/storages/LOC2HOT/drain"
+admin_cli admin drain LOC2HOT
 stash "fileset create LOC2HOT:refused --size 1Gi"
-admin POST "/storages/LOC2HOT/undrain"
-admin GET "/reports/usage?group_by=route"
-admin GET "/reports/allocation"
+admin_cli admin undrain LOC2HOT
+admin_cli admin report usage --group-by route
+admin_cli admin report allocation
+admin_cli admin limit unset "$USER_NAME" LOC2HOT
 
 echo "=== 8. metrics ==="
 curl -sS "$CONTROLLER/metrics" | grep -E "^stash_(transfers_total|transfer_bytes_total|queue_depth|storage_used_bytes|filesets_total|daemon_up)" | head -20
