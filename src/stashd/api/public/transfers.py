@@ -137,7 +137,7 @@ async def _warm(
         size_bytes=body.size_bytes,
         refresh=body.refresh,
     )
-    start, duration = warm.eta(cluster, plan)
+    start, duration = warm.eta(cluster, plan.route, plan.bytes_total, plan.queued_ahead_bytes)
     if body.dry_run:
         return Preflight(
             kind=TransferKind.WARM,
@@ -190,20 +190,7 @@ async def _flush(
         target_path=body.target.path,
     )
     if body.dry_run:
-        start, duration = warm.eta(
-            cluster,
-            warm.Preflight(
-                source_reference=plan.source_reference,
-                target_reference=plan.target_reference,
-                path=plan.path,
-                route=plan.route,
-                bytes_total=plan.bytes_total,
-                file_count=plan.file_count,
-                allocation_bytes=0,
-                refresh=False,
-                queued_ahead_bytes=0,
-            ),
-        )
+        start, duration = warm.eta(cluster, plan.route, plan.bytes_total)
         return Preflight(
             kind=TransferKind.FLUSH,
             source=plan.source_reference,

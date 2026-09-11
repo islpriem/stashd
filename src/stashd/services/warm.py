@@ -178,16 +178,20 @@ async def _queued_ahead(session: AsyncSession, route: Route) -> int:
     return int(total or 0)
 
 
-def eta(cluster: ClusterConfig, plan: Preflight) -> tuple[int, int]:
+def eta(
+    cluster: ClusterConfig,
+    route: Route,
+    bytes_total: int,
+    queued_ahead_bytes: int = 0,
+) -> tuple[int, int]:
+    """When a transfer of this size on this route would start and how long it would take."""
     throughput = throughput_for(
-        plan.route,
+        route,
         default=cluster.transfer.nominal_throughput.default,
         routes=cluster.transfer.nominal_throughput.routes,
     )
     start, duration = estimate(
-        bytes_total=plan.bytes_total,
-        queued_ahead=plan.queued_ahead_bytes,
-        throughput=throughput,
+        bytes_total=bytes_total, queued_ahead=queued_ahead_bytes, throughput=throughput
     )
     return int(start.total_seconds()), int(duration.total_seconds())
 
