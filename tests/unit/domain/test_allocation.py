@@ -168,3 +168,18 @@ class TestResize:
 
     def test_an_admin_may_force_a_shrink_below_usage(self) -> None:
         assert check_resize(current=10 * GIB, used=5 * GIB, new=4 * GIB, force=True) == -6 * GIB
+
+
+class TestWhatAnOffenderIsToldToDo:
+    def test_it_does_not_name_a_remedy_the_same_rule_refuses(self) -> None:
+        """Growing a fileset is an allocating operation, so it is refused too: telling
+        the user to resize sends them straight back into the wall they just hit."""
+        refusal = raised(request(), state(over_allocation_filesets=("mydir",)))
+
+        assert "resize" not in str(refusal)
+        assert "mydir" in str(refusal)
+
+    def test_it_names_something_that_works(self) -> None:
+        refusal = raised(request(), state(over_allocation_filesets=("mydir",)))
+
+        assert "delete" in str(refusal) or "release" in str(refusal)

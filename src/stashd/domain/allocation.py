@@ -84,8 +84,11 @@ def admit(request: AllocationRequest, state: AllocationState) -> None:
     if state.over_allocation_filesets:
         offenders = ", ".join(state.over_allocation_filesets)
         raise OverAllocation(
+            # Not "resize": growing a fileset is itself an allocating operation and
+            # lands right back here. What works is getting under the
+            # reservation again, or giving the fileset up.
             f"your fileset(s) {offenders} use more than they reserved; "
-            "resize or release them before allocating more",
+            "delete what is inside them or release them before allocating more",
             filesets=list(state.over_allocation_filesets),
         )
     if state.user_fileset_count >= state.max_filesets_per_user:
