@@ -5,6 +5,7 @@ window; the allocation report is a snapshot of live filesets against the limits 
 apply to them.
 """
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -92,7 +93,7 @@ def _percentile(values: list[float], fraction: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
-    rank = max(1, min(len(ordered), round(fraction * len(ordered) + 0.5)))
+    rank = max(1, min(len(ordered), math.ceil(fraction * len(ordered))))
     return ordered[rank - 1]
 
 
