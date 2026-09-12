@@ -30,7 +30,6 @@ config makes stashd exit with status 2. Working examples are in [`dev/`](../dev)
 | `identity` | Storage | `sudo` (default), or `current` to run as the daemon's own user |
 | `worker_pool_size` | Storage | Transfers run at once, default 4; at least `concurrency.per_storage` |
 | `config_refresh_interval` | Storage | How often the cluster config is refetched, default `60s` |
-| `broker.url` | Storage | Required, but unused: transfers run inside the daemon |
 
 ## Cluster config
 

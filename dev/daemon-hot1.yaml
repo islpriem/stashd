@@ -6,7 +6,6 @@ self:
   storages: [HOT1]
 controller: { url: "http://127.0.0.1:8000", token_file: peer-token }
 server: { host: 127.0.0.1, port: 8001 }
-broker: { url: "redis://localhost:6379/0" }
 logging: { level: DEBUG, format: console }
 cache_dir: var/hot1
 peer_token_file: peer-token

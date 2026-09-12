@@ -5,7 +5,6 @@ self:
   storages: [LOC2HOT]
 controller: { url: "http://127.0.0.1:8000", token_file: peer-token }
 server: { host: 127.0.0.1, port: 8002 }
-broker: { url: "redis://redis:6379/0" }
 logging: { level: INFO, format: json }
 cache_dir: var/loc2hot
 peer_token_file: peer-token

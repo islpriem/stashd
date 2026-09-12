@@ -91,10 +91,6 @@ class Server(Section):
     tls_key: ConfigRelativePath | None = None
 
 
-class Broker(Section):
-    url: str
-
-
 class Database(Section):
     url: str
 
@@ -109,7 +105,6 @@ class BootstrapConfig(Section):
     cache_dir: ConfigRelativePath
     server: Server = Server()
     controller: ControllerEndpoint | None = None
-    broker: Broker | None = None
     database: Database | None = None
     logging: Logging = Logging()
     # The controller authors this. A daemon fetches instead, and caches under cache_dir.
@@ -136,8 +131,6 @@ class BootstrapConfig(Section):
         else:
             if self.controller is None:
                 problems.append("a storage daemon needs a controller url and token_file")
-            if self.broker is None:
-                problems.append("a storage daemon needs a broker")
             if not self.node.storages:
                 problems.append("a storage daemon needs at least one storage in self.storages")
             if self.cluster_config is not None:

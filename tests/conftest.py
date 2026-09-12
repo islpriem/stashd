@@ -94,7 +94,6 @@ STORAGE_BOOTSTRAP: dict[str, Any] = {
     "self": {"daemon_id": "hot1", "role": "storage", "storages": ["HOT1"]},
     "controller": {"url": "https://stash-controller:8443", "token_file": "peer-token"},
     "server": {"host": "0.0.0.0", "port": 8444},
-    "broker": {"url": "redis://localhost:6379/0"},
     "logging": {"level": "INFO", "format": "json"},
     "cache_dir": "var/hot1",
 }

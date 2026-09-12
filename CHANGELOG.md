@@ -138,3 +138,8 @@
   `identity`.
 - `INVALID_REQUEST` added to the error-code list for requests that fail schema validation;
   `stashcli` maps it to exit code 2.
+
+### Removed
+
+- The `broker` bootstrap key and the Redis service: storage daemons run transfers
+  in-process, and a config that still sets `broker` is rejected.

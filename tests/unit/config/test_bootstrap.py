@@ -39,7 +39,6 @@ class TestRoles:
         assert config.node.storages == ["HOT1"]
         assert config.controller is not None
         assert config.controller.token_file.name == "peer-token"
-        assert config.broker is not None
 
     def test_unknown_role_is_rejected(
         self, write_bootstrap: WriteConfig, controller_yaml: dict[str, Any]
@@ -71,12 +70,12 @@ class TestRoleSpecificRequirements:
 
         assert "storage daemon needs a controller" in problems(write_bootstrap, storage_yaml)
 
-    def test_storage_daemon_needs_a_broker(
+    def test_a_broker_section_is_rejected(
         self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
     ) -> None:
-        del storage_yaml["broker"]
+        storage_yaml["broker"] = {"url": "redis://localhost:6379/0"}
 
-        assert "storage daemon needs a broker" in problems(write_bootstrap, storage_yaml)
+        assert "broker" in problems(write_bootstrap, storage_yaml)
 
     def test_storage_daemon_needs_at_least_one_storage(
         self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
@@ -90,11 +89,12 @@ class TestRoleSpecificRequirements:
     def test_every_problem_is_reported_at_once(
         self, write_bootstrap: WriteConfig, storage_yaml: dict[str, Any]
     ) -> None:
-        del storage_yaml["broker"]
         del storage_yaml["controller"]
+        storage_yaml["self"] = {"daemon_id": "hot1", "role": "storage", "storages": []}
 
-        assert "needs a broker" in problems(write_bootstrap, storage_yaml)
-        assert "needs a controller" in problems(write_bootstrap, storage_yaml)
+        reported = problems(write_bootstrap, storage_yaml)
+        assert "needs a controller" in reported
+        assert "needs at least one storage" in reported
 
 
 class TestPeersAndStorageDaemons:
