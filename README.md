@@ -35,8 +35,8 @@ A sandbox container runs a controller, two storage daemons, MUNGE, rsync and ssh
 gives you a shell with the CLI. Clone both repositories side by side:
 
 ```bash
-git clone git@github.com:islpriem/stashd.git
-git clone git@github.com:islpriem/stashcli.git
+git clone https://github.com/islpriem/stashd.git
+git clone https://github.com/islpriem/stashcli.git
 cd stashd
 docker compose --profile e2e up -d        # builds the image on first use
 docker compose exec e2e /workspace/stashd/dev/e2e/sandbox.sh up
@@ -117,3 +117,7 @@ src/stashd/
 migrations/   database schema (Alembic)
 dev/          local and end-to-end setup
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
