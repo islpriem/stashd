@@ -6,8 +6,8 @@ service gathers the sums into an :class:`AllocationState` and the decision is pu
 
 Order of the checks. The two gates come first because they are unconditional and their
 message is more useful than a byte count: a drained storage, then an outstanding
-over-allocation, then the fileset count, then the three allocation limits
-of §9 from narrowest to widest, then storage capacity.
+over-allocation, then the fileset count, then the user's limit on the storage, the user's
+limit across all caches, and last the storage's capacity.
 """
 
 import math
