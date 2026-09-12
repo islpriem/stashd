@@ -1,131 +1,91 @@
-# Operating STASH
+# Operations
 
-What an operator has to decide, install and watch.
+What running STASH on a cluster involves. Read [Concepts](CONCEPTS.md) and
+[Configuration](CONFIGURATION.md) first.
 
-## Roles and processes
+## Topology
 
-One **controller** (`role: controller`) owns PostgreSQL, the queue and the authoritative
-cluster config. One **storage daemon** (`role: storage`) per storage system runs on a host
-where that storage is mounted and does every filesystem operation. Running two controllers
-is unsupported: the cluster config cannot detect it, and nothing else will either.
+Run one controller, and one storage daemon per storage system on a host that mounts it.
+A second controller is unsupported and goes undetected. Start the controller first: a
+storage daemon needs it on its first start, and afterwards starts from its cached cluster
+config, reported as degraded by `/readyz`, until the controller is back.
 
-## Acting as the user (undecided)
+`server.host` defaults to `127.0.0.1`; anything reached from another host needs a real
+address, and TLS through `server.tls_cert` and `server.tls_key`. Every host that runs the
+CLI or the controller needs `munged` with the cluster's key.
 
-A daemon never impersonates anyone through MUNGE: MUNGE proves *who asked*. Doing the work
-*as* that user is a host-local privilege mechanism, chosen per daemon with `identity:`.
+## Running work as the user
 
-| `identity:` | What happens                                                | Use                    |
-| ----------- | ----------------------------------------------------------- | ---------------------- |
-| `sudo`      | `sudo -n -u <user> -- <command>`; never prompts.            | The interim decision.  |
-| `current`   | The daemon's own user does the work; no privilege change.   | Development.           |
-
-`sudo` needs a sudoers rule allowing the daemon's account to run the commands the driver
-uses (`mkdir`, `chmod`, `rm`) as any STASH user, without a password and without a TTY:
+With `identity: sudo` (the default), a storage daemon runs every command as the requesting
+user through `sudo -n -u <user> --`. Allow exactly those commands, without a password or
+TTY, and never as root:
 
 ```sudoers
-Cmnd_Alias STASH = /bin/mkdir, /bin/chmod, /bin/rm
-stashd ALL=(ALL) NOPASSWD: STASH
+Cmnd_Alias STASH = /usr/bin/mkdir, /usr/bin/chmod, /usr/bin/rm, /usr/bin/test, \
+                   /usr/bin/du, /usr/bin/find, /usr/bin/rsync
+stashd ALL=(ALL, !root) NOPASSWD: STASH
 Defaults!STASH !requiretty
 ```
 
-The alternative — a daemon that runs as root and drops privileges per operation —
-is not implemented. The decision needs a security sign-off before production use.
-
-## POSIX cannot enforce a fileset quota
-
-The `posix` driver declares `native_quota: false`, and `set_fileset_quota` does nothing
-there. An allocation is therefore a *reservation in STASH*, not a limit the filesystem
-enforces: a job that writes past it succeeds. Overruns are found afterwards by usage
-reconciliation, which flags the fileset `over_allocation` and blocks further allocations by
-that user. Where the storage can enforce a quota, a driver that declares the capability
-applies it automatically. Tell your users this; `stash quota` says it too.
+Adjust the paths to your distribution. `identity: current` runs everything as the
+daemon's own user and is meant for development. Running as root and dropping privileges
+per operation is not implemented.
 
 ## Fileset directories
 
-A fileset is `<fileset_prefix>/<user>/<name>`, created by the user themselves through the
-`Identity`, mode `0700` by default and configurable per storage with `fileset_mode`.
-The per-user directory is created on the way with the daemon's umask, so the
-`fileset_prefix` must let a user create their own directory.
+A fileset is `<fileset_prefix>/<user>/<name>`, created by the user with mode
+`fileset_mode` (default `0700`). Users must be able to create `<fileset_prefix>/<user>`
+themselves: make the prefix sticky and world-writable (`1777`), or create the per-user
+directories in advance. STASH never adopts a directory that belongs to someone else.
 
-STASH never adopts a directory that already exists and belongs to somebody else: creation
-fails instead.
+## Transfers between sites
 
-## Peer tokens
+When a transfer's storages belong to different daemons, rsync runs over ssh from the
+source daemon's host to the target daemon's `host`, as the requesting user and with
+`BatchMode=yes`. Every user who transfers between sites needs key-based ssh between those
+hosts that works without a prompt.
 
-`/internal/v1` accepts one credential: a bearer token from `peer_token_file`, mode `0600`.
-A daemon with no token configured refuses every internal request. MUNGE credentials do not
-open the internal API. Rotate by writing a new token on every peer and restarting.
+## Quotas on POSIX storage
 
-## Starting order
+The `posix` driver cannot enforce a directory quota, so a reservation is bookkeeping, not
+a limit: a job can write past it. Usage reconciliation measures every fileset each
+`usage_reconcile_interval` (default 15 minutes), flags overruns and blocks the owner's
+next allocation. `stash quota` tells users so. Raise the interval where walking the tree
+is expensive.
 
-A storage daemon fetches the cluster config from the controller at startup and caches it
-under `cache_dir`. On a host that has never run one, the controller must be up first;
-after that the daemon starts from its cache and reports itself degraded until it reaches
-the controller again. Each daemon announces itself on startup and on every refresh, so
-`stash storages` shows when it was last seen and what revision it is on.
+## Secrets
 
-`worker_pool_size` bounds how many transfers a daemon runs at once. It may not be smaller
-than `concurrency.per_storage`, or the daemon would be handed more work than it can run;
-it refuses to start in that case.
+- The peer token (`peer_token_file`, mode `0600`), shared by the controller and every
+  daemon. To rotate it, write the new token everywhere and restart every process.
+- The MUNGE key, the same on every host that runs the CLI or the controller.
+- The database password in the controller's `database.url`.
 
-## SSH between daemon hosts
+## Maintenance
 
-A transfer whose two storages sit on different daemons runs over rsync's ssh channel. The
-daemon holding the source connects to the target daemon's `host` **as the requesting
-user**, so every user who transfers across sites needs key-based ssh from the
-source host to the target host, and `ssh -o BatchMode=yes` must succeed without a prompt.
-A daemon without `host:` in the cluster config can only take part in local transfers.
+- `stash admin drain STORAGE` stops new filesets and dispatches on a storage; running
+  transfers finish and no data moves. `stash admin undrain STORAGE` reverses it. Drain
+  state lives in the database and needs no config change.
+- Stopping a storage daemon lets its transfers finish for `timeouts.drain`, then cancels
+  and reports the rest.
+- Finished transfers older than `retention.transfers` are rolled into daily statistics
+  and deleted, so report totals stay the same; audit events older than `retention.audit`
+  are deleted. Pruning runs hourly on the controller.
 
-The alternative — connecting as a service account and using rsync's `--rsync-path` to
-switch to the user on the far side — is not implemented.
+## Monitoring
 
-## Draining a storage
+Both roles serve `/healthz` and `/readyz`. The controller serves Prometheus metrics at
+`/metrics`, computed from the database on each scrape. The endpoint needs no credential;
+filter it at a proxy if that matters. Worth alerting on:
 
-`POST /api/v1/storages/{id}/drain` (admin) stops new work involving a storage: the
-scheduler dispatches nothing that touches it and fileset creation on it is refused with
-`STORAGE_DRAINED`. Transfers already running finish. `undrain` reverses it. Drain state
-lives in the database, not the cluster config, so it survives a config rollout and takes
-effect without one. `stash storages` shows which storages are drained.
+- `stash_daemon_up == 0`: a daemon not seen within `timeouts.daemon_unreachable`
+- `stash_queue_depth`: transfers waiting or running per storage
+- `stash_storage_used_bytes` far below `stash_storage_allocated_bytes`: users reserve
+  more than they use
 
-Draining is what you do before maintenance. It does not evacuate anything: filesets stay
-where they are, and their owners keep their reservations.
+## Availability and backups
 
-## Usage reconciliation
-
-Each cache storage is measured on its own `usage_reconcile_interval` (default 15 minutes):
-the controller asks the owning daemon what every live fileset holds, corrects
-`used_bytes`, and flags anything past its allocation. A daemon that cannot answer is
-logged and retried on the next pass. Raise the interval on storages where walking the
-tree is expensive; lower it where overruns need to be caught quickly.
-
-## Retention
-
-Terminal transfers older than `retention.transfers` are rolled into a daily bucket per
-user, storage, route and kind, then deleted; audit events older than `retention.audit`
-are deleted. The usage report reads both the live rows and the buckets, so totals do not
-move when pruning runs. What a bucket cannot keep is the distribution: p95 queue wait
-covers only transfers that are still in the table.
-
-Pruning runs hourly on the controller. Nothing else deletes rows.
-
-## Metrics
-
-`/metrics` on the controller serves the Prometheus text format, without a credential, and
-is computed from the database at each scrape. Watch `stash_daemon_up` (a daemon not seen
-within `timeouts.daemon_unreachable`), `stash_queue_depth`, and
-`stash_storage_used_bytes` against `stash_storage_allocated_bytes` — a gap that keeps
-growing means users reserve more than they use.
-
-## The controller is a single point of failure
-
-There is one controller. While it is down: no submissions, no reads, no scheduling, and
-daemons run on their cached config and report themselves degraded. Transfers already
-handed to a daemon keep running and their events are retried; nothing is lost, but
-nothing new starts. Restarting the controller reconciles in-flight transfers against the
-daemons before it schedules anything new.
-
-## Backups
-
-Everything STASH knows is in PostgreSQL. A lost database means lost accounting for data
-that still exists on disk; back it up. Cached filesets are replicas and need no backup;
-**output filesets are not**, until they are flushed.
+The controller is a single point of failure. While it is down, nothing is submitted or
+scheduled; transfers already on a daemon keep running and report back once it returns.
+On start, the controller reconciles in-flight transfers with the daemons before it
+schedules anything new. Everything STASH knows is in PostgreSQL, so back it up. Cached
+filesets can be rebuilt from their source; output filesets cannot until they are flushed.
