@@ -1,7 +1,7 @@
 """A runner that does the work where it stands.
 
-What a single-storage daemon without a broker uses, and what the tests run against. The
-Celery runner has the same shape; only where the work happens differs.
+What the tests run against. The thread-pool runner a daemon uses has the same shape;
+only where the work happens differs.
 """
 
 from dataclasses import dataclass, field

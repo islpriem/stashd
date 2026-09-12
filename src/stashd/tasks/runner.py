@@ -1,7 +1,7 @@
 """The seam between a request and the work it starts.
 
-A request handler never moves data: it hands a task to a runner and answers. Celery is
-the runner in a deployment; tests use one that runs the transfer inline.
+A request handler never moves data: it hands a task to a runner and answers. A storage
+daemon runs tasks on a thread pool; tests use a runner that runs the transfer inline.
 """
 
 from dataclasses import dataclass
