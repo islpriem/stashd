@@ -36,7 +36,9 @@ per operation is not implemented.
 A fileset is `<fileset_prefix>/<user>/<name>`, created by the user with mode
 `fileset_mode` (default `0700`). Users must be able to create `<fileset_prefix>/<user>`
 themselves: make the prefix sticky and world-writable (`1777`), or create the per-user
-directories in advance. STASH never adopts a directory that belongs to someone else.
+directories in advance, owned by the user. The daemon's own account must be able to
+traverse them (at least `0711`), since it checks who owns each new fileset. STASH never
+adopts a directory that belongs to someone else.
 
 ## Transfers between sites
 
