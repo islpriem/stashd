@@ -7,7 +7,7 @@ before a job runs, and write results back afterwards. A central scheduler orders
 transfers by fair share and keeps them within per-user, per-storage and per-route limits.
 
 This repository holds the daemon; the command-line client is
-[stashcli](https://github.com/islpriem/stashcli). Version 0.1.0, unreleased.
+[stashcli](https://github.com/islpriem/stashcli). Version 0.1.1.
 
 ## Architecture
 

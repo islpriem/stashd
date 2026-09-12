@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+### Added
+
+- MIT license, declared in the package metadata.
+- `docs/OPERATIONS.md` states that the daemon's account must be able to traverse the
+  per-user directories under a fileset prefix (at least `0711`): it checks who owns each
+  new fileset.
+
+## 0.1.0
 
 ### Added
 
