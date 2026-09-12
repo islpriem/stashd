@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 (unreleased)
 
 ### Added
 
@@ -27,7 +27,7 @@
   requests that jointly exceed a limit cannot both be admitted;
   `POST /transfers` releases one and frees the allocation only after
   the daemon confirms. Both are audited.
-- `docs/OPERATIONS.md`.
+- `docs/CONCEPTS.md`, `docs/CONFIGURATION.md` and `docs/OPERATIONS.md`.
 - `/storages` says per storage whether an allocation is enforced by the filesystem,
   and `/transfers` can be filtered to one fileset: both are what `stash quota`
   and `stash fileset show` need.
