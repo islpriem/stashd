@@ -2,6 +2,7 @@
 name = "stashd"
 version = "0.1.0"
 description = "STASH daemon: controller and storage daemon for HPC data staging"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.19.1",
